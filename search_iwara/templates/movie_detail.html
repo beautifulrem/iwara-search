@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}{{ movie.title }} · Search Iwara{% endblock %}
+
+{% block content %}
+  <article class="detail-layout">
+    <section class="detail-hero">
+      <div class="detail-hero__media">
+        {% if movie.thumbnail_url %}
+          <img src="{{ movie.thumbnail_url }}" alt="{{ movie.title }}">
+        {% else %}
+          <div class="movie-card__placeholder movie-card__placeholder--large">No image</div>
+        {% endif %}
+      </div>
+      <div class="detail-hero__content">
+        <p class="eyebrow">Movie {{ movie.source_site_id }}</p>
+        <h1>{{ movie.title }}</h1>
+        <div class="detail-hero__stats">
+          <span>👁 {{ movie.view_count_display }}</span>
+          <span>♥ {{ movie.favorite_count_display }}</span>
+          {% if movie.published_at %}<span>🗓 {{ movie.published_at }}</span>{% endif %}
+          <span class="status-pill {% if movie.status == 'missing' %}status-pill--missing{% endif %}">{{ movie.status }}</span>
+        </div>
+        <div class="detail-hero__actions">
+          {% if movie.external_video_url %}
+            <a class="button button--primary" href="{{ movie.external_video_url }}" target="_blank" rel="noopener">打开 Iwara</a>
+          {% endif %}
+          <a class="button button--ghost" href="{{ movie.oreno3d_url }}" target="_blank" rel="noopener">打开 Oreno3D</a>
+          <a class="button button--ghost" href="/">返回搜索</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-grid">
+      <div class="detail-panel">
+        <h2>作者</h2>
+        {% if movie.author_source_id %}
+          <a class="detail-link" href="{{ search_href(author_any=movie.author_source_id) }}">{{ movie.author_name }}</a>
+        {% else %}
+          <p>{{ movie.author_name }}</p>
+        {% endif %}
+      </div>
+
+      <div class="detail-panel">
+        <h2>Tag</h2>
+        <div class="detail-tags">
+          {% if movie.tags %}
+            {% for tag in movie.tags %}
+              <a class="mini-chip" href="{{ search_href(tag_any=tag.id) }}">{{ tag.name }}</a>
+            {% endfor %}
+          {% else %}
+            <span class="mini-chip mini-chip--muted">无 Tag</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="detail-panel">
+        <h2>原作</h2>
+        <div class="detail-tags">
+          {% if movie.origins %}
+            {% for origin in movie.origins %}
+              <a class="mini-chip" href="{{ search_href(origin_any=origin.id) }}">{{ origin.name }}</a>
+            {% endfor %}
+          {% else %}
+            <span class="mini-chip mini-chip--muted">无</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="detail-panel">
+        <h2>角色</h2>
+        <div class="detail-tags">
+          {% if movie.characters %}
+            {% for character in movie.characters %}
+              <a class="mini-chip" href="{{ search_href(character_any=character.id) }}">{{ character.name }}</a>
+            {% endfor %}
+          {% else %}
+            <span class="mini-chip mini-chip--muted">无</span>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-panel detail-panel--full">
+      <h2>作者评论</h2>
+      {% if movie.author_comment %}
+        <blockquote class="comment-block">{{ movie.author_comment }}</blockquote>
+      {% else %}
+        <p class="muted-text">没有作者评论。</p>
+      {% endif %}
+    </section>
+  </article>
+{% endblock %}

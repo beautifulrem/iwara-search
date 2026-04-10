@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}{{ entity_title }} · Search Iwara{% endblock %}
+
+{% block content %}
+  <section class="hero-card">
+    <div>
+      <p class="eyebrow">Browse Rankings</p>
+      <h1 class="hero-title">{{ entity_title }}</h1>
+      <p class="hero-copy">基于本地已抓取数据聚合的实体榜单。当前按综合热度排序，点击条目会跳回搜索页并带上对应筛选。</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <span class="hero-stat__label">当前页</span>
+        <span class="hero-stat__value">{{ page }}/{{ page_count }}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="entity-grid">
+      {% for item in items %}
+        <article class="entity-card">
+          <div class="entity-card__top">
+            <h2>{{ item.name }}</h2>
+            {% if entity_kind == 'authors' %}
+              <a class="button button--ghost" href="{{ search_href(author_any=item.source_id) }}">查看作品</a>
+            {% elif entity_kind == 'characters' %}
+              <a class="button button--ghost" href="{{ search_href(character_any=item.source_id) }}">查看作品</a>
+            {% elif entity_kind == 'tags' %}
+              <a class="button button--ghost" href="{{ search_href(tag_any=item.source_id) }}">查看作品</a>
+            {% else %}
+              <a class="button button--ghost" href="{{ search_href(origin_any=item.source_id) }}">查看作品</a>
+            {% endif %}
+          </div>
+          <div class="entity-card__stats">
+            <span>{{ item.movie_count }} 部</span>
+            <span>{{ item.total_views_display }} 👁</span>
+            <span>{{ item.total_favorites_display }} ♥</span>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if page_count > 1 %}
+    <nav class="pagination" aria-label="分页">
+      {% for item in pagination_items %}
+        {% if item.ellipsis %}
+          <span class="pagination__ellipsis">…</span>
+        {% elif item.active %}
+          <span class="pagination__item pagination__item--active">{{ item.page }}</span>
+        {% else %}
+          <a class="pagination__item" href="{{ item.href }}">{{ item.page }}</a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+  {% endif %}
+{% endblock %}

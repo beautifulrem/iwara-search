@@ -1,0 +1,9 @@
+fastapi<1.0,>=0.115
+httpx<1.0,>=0.28
+jinja2<4.0,>=3.1
+selectolax<1.0,>=0.3
+typer<1.0,>=0.16
+uvicorn<1.0,>=0.35
+
+[dev]
+pytest<9.0,>=8.3

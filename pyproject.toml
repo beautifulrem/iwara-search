@@ -1,0 +1,30 @@
+[project]
+name = "search-iwara"
+version = "0.1.0"
+description = "Local Oreno3D metadata mirror with SQLite search and a FastAPI UI."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "httpx>=0.28,<1.0",
+  "jinja2>=3.1,<4.0",
+  "selectolax>=0.3,<1.0",
+  "typer>=0.16,<1.0",
+  "uvicorn>=0.35,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0",
+]
+
+[project.scripts]
+search-iwara = "search_iwara.cli:main"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"

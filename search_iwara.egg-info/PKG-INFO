@@ -1,0 +1,47 @@
+Metadata-Version: 2.4
+Name: search-iwara
+Version: 0.1.0
+Summary: Local Oreno3D metadata mirror with SQLite search and a FastAPI UI.
+Requires-Python: >=3.13
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: httpx<1.0,>=0.28
+Requires-Dist: jinja2<4.0,>=3.1
+Requires-Dist: selectolax<1.0,>=0.3
+Requires-Dist: typer<1.0,>=0.16
+Requires-Dist: uvicorn<1.0,>=0.35
+Provides-Extra: dev
+Requires-Dist: pytest<9.0,>=8.3; extra == "dev"
+
+# Search Iwara
+
+本地搜索站，用来抓取 `oreno3d.com` 的元数据并提供本地搜索 UI。
+
+## 功能
+
+- 全量抓取和手动增量同步
+- SQLite + FTS5 标题搜索
+- 作者 / tag 组合筛选，支持包含与排除
+- 本地详情页与 Iwara 外链跳转
+
+## 安装
+
+```bash
+uv sync
+```
+
+## 常用命令
+
+```bash
+uv run search-iwara sync full
+uv run search-iwara sync latest
+uv run search-iwara serve
+```
+
+默认数据库路径为 `data/oreno3d.sqlite3`。
+
+## 说明
+
+- 仅抓取元数据，不抓视频内容。
+- 首次全量同步页数很多，命令支持断点续跑。
+- 缩略图默认直接引用原站 URL。

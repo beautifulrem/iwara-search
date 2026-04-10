@@ -1,0 +1,2 @@
+[console_scripts]
+search-iwara = search_iwara.cli:main
