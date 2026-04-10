@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Search Iwara{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=dark_mode,emoji_events,favorite,fiber_new,light_mode,menu,remove_red_eye,trending_up,tune" rel="stylesheet">
+  <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}">
+  <script>
+    (function(){
+      var t = localStorage.getItem('theme');
+      if (t === 'dark' || t === 'light') {
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Menu">
+        <span class="material-symbols-outlined">menu</span>
+      </button>
+      <a class="site-title" href="/">Search Iwara</a>
+      <form class="header-search" method="get" action="/">
+        <input type="text" name="q" placeholder="Search..." value="{{ request.query_params.get('q', '') }}">
+        <button type="submit">検索</button>
+      </form>
+      <nav class="site-nav">
+        <a href="/characters">角色</a>
+        <a href="/authors">作者</a>
+        <a href="/tags">标签</a>
+        <a href="/origins">原作</a>
+      </nav>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
+        <span class="material-symbols-outlined">dark_mode</span>
+      </button>
+    </div>
+  </header>
+  <div class="site-layout">
+    <aside class="sidebar" id="sidebar">
+      {% if sidebar is defined and sidebar %}
+      <section class="sidebar-section">
+        <h3 class="sidebar-section__title"><span>人気キャラ</span><a href="/characters">更多</a></h3>
+        <ul class="sidebar-list">
+          {% for item in sidebar.characters %}
+          <li><a href="/?character_any={{ item.source_id }}">{{ item.name }}</a></li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section class="sidebar-section">
+        <h3 class="sidebar-section__title"><span>人気作者</span><a href="/authors">更多</a></h3>
+        <ul class="sidebar-list">
+          {% for item in sidebar.authors %}
+          <li><a href="/?author_any={{ item.source_id }}">{{ item.name }}</a></li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section class="sidebar-section">
+        <h3 class="sidebar-section__title"><span>人気カテゴリ</span></h3>
+        <ul class="sidebar-list">
+          {% for item in sidebar.categories %}
+          <li>
+            {% if item.kind == 'tags' %}
+            <a href="/?tag_any={{ item.source_id }}">{{ item.name }}</a>
+            {% else %}
+            <a href="/?origin_any={{ item.source_id }}">{{ item.name }}</a>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+    </aside>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <main class="main-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script defer src="{{ request.url_for('static', path='app.js') }}"></script>
+</body>
+</html>

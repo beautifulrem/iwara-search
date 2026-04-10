@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}{{ movie.title }} · Search Iwara{% endblock %}
+
+{% block content %}
+  <nav class="detail-breadcrumb">
+    <a href="/">ホーム</a>
+    {% if movie.origins %}
+      <span class="detail-breadcrumb__sep">&gt;</span>
+      <a href="/?origin_any={{ movie.origins[0].id }}">{{ movie.origins[0].name }}</a>
+    {% endif %}
+    {% if movie.characters %}
+      <span class="detail-breadcrumb__sep">&gt;</span>
+      <a href="/?character_any={{ movie.characters[0].id }}">{{ movie.characters[0].name }}</a>
+    {% endif %}
+    <span class="detail-breadcrumb__sep">&gt;</span>
+    <span>動画</span>
+  </nav>
+
+  <div class="detail-thumbnail">
+    {% if movie.thumbnail_url %}
+      <img src="{{ movie.thumbnail_url }}" alt="{{ movie.title }}">
+    {% endif %}
+  </div>
+
+  <h1 class="detail-title">{{ movie.title }}</h1>
+
+  <div class="detail-meta">
+    {% if movie.published_at %}<span>{{ movie.published_at }}</span>{% endif %}
+    <span>{{ movie.view_count_display }} views</span>
+    <span class="accent">{{ movie.favorite_count_display }} favorites</span>
+    <span class="status-pill {% if movie.status == 'missing' %}status-pill--missing{% endif %}">{{ movie.status }}</span>
+  </div>
+
+  <div class="detail-actions">
+    {% if movie.external_video_url %}
+      <a class="btn btn--primary" href="{{ movie.external_video_url }}" target="_blank" rel="noopener">打开 Iwara</a>
+    {% endif %}
+    <a class="btn btn--ghost" href="{{ movie.oreno3d_url }}" target="_blank" rel="noopener">打开 Oreno3D</a>
+    <a class="btn btn--ghost" href="/">返回搜索</a>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-card">
+      <h3>作成者</h3>
+      <div class="meta-card__items">
+        {% if movie.author_source_id %}
+          <a class="meta-chip" href="{{ search_href(author_any=movie.author_source_id) }}">{{ movie.author_name }}</a>
+        {% else %}
+          <span class="meta-chip">{{ movie.author_name }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="meta-card">
+      <h3>原作</h3>
+      <div class="meta-card__items">
+        {% if movie.origins %}
+          {% for origin in movie.origins %}
+            <a class="meta-chip" href="{{ search_href(origin_any=origin.id) }}">{{ origin.name }}</a>
+          {% endfor %}
+        {% else %}
+          <span class="meta-chip">-</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="meta-card">
+      <h3>キャラ</h3>
+      <div class="meta-card__items">
+        {% if movie.characters %}
+          {% for character in movie.characters %}
+            <a class="meta-chip" href="{{ search_href(character_any=character.id) }}">{{ character.name }}</a>
+          {% endfor %}
+        {% else %}
+          <span class="meta-chip">-</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="meta-card">
+      <h3>タグ</h3>
+      <div class="meta-card__items">
+        {% if movie.tags %}
+          {% for tag in movie.tags %}
+            <a class="mini-tag" href="{{ search_href(tag_any=tag.id) }}">{{ tag.name }}</a>
+          {% endfor %}
+        {% else %}
+          <span class="mini-tag">-</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if movie.author_comment %}
+    <blockquote class="comment-block">{{ movie.author_comment }}</blockquote>
+  {% endif %}
+
+  {% if related_movies %}
+    <section class="related-section">
+      <h2>関連動画</h2>
+      <div class="video-grid">
+        {% for rel in related_movies %}
+          <article class="video-card">
+            <a class="video-card__cover" href="{{ request.url_for('movie_detail', source_site_id=rel.source_site_id) }}">
+              {% if rel.thumbnail_url %}
+                <img src="{{ rel.thumbnail_url }}" alt="{{ rel.title }}" loading="lazy">
+              {% else %}
+                <div class="video-card__placeholder">No image</div>
+              {% endif %}
+              <div class="video-card__stats">
+                <span><span class="material-symbols-outlined">remove_red_eye</span>{{ rel.view_count_display }}</span>
+                <span><span class="material-symbols-outlined">favorite</span>{{ rel.favorite_count_display }}</span>
+              </div>
+            </a>
+            <div class="video-card__body">
+              <h3 class="video-card__title"><a href="{{ request.url_for('movie_detail', source_site_id=rel.source_site_id) }}">{{ rel.title }}</a></h3>
+              <p class="video-card__author">{{ rel.author_name }}</p>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

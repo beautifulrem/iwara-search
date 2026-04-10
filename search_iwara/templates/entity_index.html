@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}{{ entity_title }} · Search Iwara{% endblock %}
+
+{% block content %}
+  <h1 style="margin:0 0 16px; font-size:1.4rem;">{{ entity_title }}</h1>
+
+  {% if entity_kind == 'authors' %}
+    {% for item in items %}
+      <div class="author-entry">
+        <div class="author-entry__header">
+          <span class="author-entry__rank">#{{ loop.index + (page - 1) * 60 }}</span>
+          <span class="author-entry__name">{{ item.name }}</span>
+          <span style="font-size:0.82rem; color:var(--text-secondary);">{{ item.movie_count }} 部 &middot; {{ item.total_favorites_display }} ♥</span>
+          <a class="btn btn--ghost" href="{{ search_href(author_any=item.source_id) }}">查看作品</a>
+        </div>
+        {% if author_movies is defined and author_movies.get(item.source_id) %}
+          <div class="author-carousel">
+            {% for mv in author_movies.get(item.source_id, []) %}
+              <article class="video-card">
+                <a class="video-card__cover" href="{{ request.url_for('movie_detail', source_site_id=mv.source_site_id) }}">
+                  {% if mv.thumbnail_url %}
+                    <img src="{{ mv.thumbnail_url }}" alt="{{ mv.title }}" loading="lazy">
+                  {% else %}
+                    <div class="video-card__placeholder">No image</div>
+                  {% endif %}
+                  <div class="video-card__stats">
+                    <span><span class="material-symbols-outlined">remove_red_eye</span>{{ mv.view_count_display }}</span>
+                    <span><span class="material-symbols-outlined">favorite</span>{{ mv.favorite_count_display }}</span>
+                  </div>
+                </a>
+                <div class="video-card__body">
+                  <h3 class="video-card__title"><a href="{{ request.url_for('movie_detail', source_site_id=mv.source_site_id) }}">{{ mv.title }}</a></h3>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="entity-list">
+      {% for item in items %}
+        <div class="entity-row">
+          <span class="entity-row__rank">#{{ loop.index + (page - 1) * 60 }}</span>
+          <span class="entity-row__name">
+            {% if entity_kind == 'characters' %}
+              <a href="{{ search_href(character_any=item.source_id) }}">{{ item.name }}</a>
+            {% elif entity_kind == 'tags' %}
+              <a href="{{ search_href(tag_any=item.source_id) }}">{{ item.name }}</a>
+            {% else %}
+              <a href="{{ search_href(origin_any=item.source_id) }}">{{ item.name }}</a>
+            {% endif %}
+          </span>
+          <span class="entity-row__stat">{{ item.movie_count }} 部 &middot; {{ item.total_favorites_display }} ♥</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if page_count > 1 %}
+    <nav class="pagination" aria-label="分页">
+      {% for item in pagination_items %}
+        {% if item.ellipsis %}
+          <span class="pagination__ellipsis">&hellip;</span>
+        {% elif item.active %}
+          <span class="pagination__item pagination__item--active">{{ item.page }}</span>
+        {% else %}
+          <a class="pagination__item" href="{{ item.href }}">{{ item.page }}</a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+  {% endif %}
+{% endblock %}

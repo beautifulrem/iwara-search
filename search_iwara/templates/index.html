@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}Search Iwara{% endblock %}
+
+{% block content %}
+  <div class="sort-bar">
+    <a class="sort-tab {% if filters.sort == 'hot_desc' %}sort-tab--active{% endif %}"
+       href="{{ search_href(sort='hot_desc', published_from=none, published_to=none, min_views=none, max_views=none, min_favorites=none, max_favorites=none) }}">
+      <span class="material-symbols-outlined">trending_up</span><span>急上昇</span>
+    </a>
+    <a class="sort-tab {% if filters.sort == 'favorites_desc' %}sort-tab--active{% endif %}"
+       href="{{ search_href(sort='favorites_desc', min_favorites=none, max_favorites=none) }}">
+      <span class="material-symbols-outlined">favorite</span><span>高評価</span>
+    </a>
+    <a class="sort-tab {% if filters.sort == 'published_desc' %}sort-tab--active{% endif %}"
+       href="{{ search_href(sort='published_desc', published_from=none, published_to=none) }}">
+      <span class="material-symbols-outlined">fiber_new</span><span>新着</span>
+    </a>
+    <a class="sort-tab {% if filters.sort == 'popularity_desc' %}sort-tab--active{% endif %}"
+       href="{{ search_href(sort='popularity_desc', min_views=none, max_views=none, min_favorites=none, max_favorites=none) }}">
+      <span class="material-symbols-outlined">emoji_events</span><span>人気</span>
+    </a>
+    <span class="sort-bar__spacer"></span>
+    <button class="filter-toggle-btn" id="filter-toggle" type="button">
+      <span class="material-symbols-outlined">tune</span><span>フィルター</span>
+    </button>
+  </div>
+
+  <div class="filter-panel" id="filter-panel">
+    <form method="get" action="/">
+      <input type="hidden" name="sort" id="sort-hidden" value="{{ filters.sort }}">
+      <div class="filter-grid">
+        <section class="filter-card">
+          <h3>作者包含任一</h3>
+          <p>命中任意一个作者即可。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/authors">
+            <input type="hidden" name="author_any" value="{{ filter_state.author_any }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.author_any %}
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="搜索作者名">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>作者排除</h3>
+          <p>排除这些作者的作品。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/authors">
+            <input type="hidden" name="author_not" value="{{ filter_state.author_not }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.author_not %}
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="排除作者">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>原作包含任一</h3>
+          <p>命中任意一个原作即可。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/origins">
+            <input type="hidden" name="origin_any" value="{{ filter_state.origin_any }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.origin_any %}
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="搜索原作">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>原作排除</h3>
+          <p>排除这些原作。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/origins">
+            <input type="hidden" name="origin_not" value="{{ filter_state.origin_not }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.origin_not %}
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="排除原作">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>角色包含任一</h3>
+          <p>命中任意一个角色即可。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/characters">
+            <input type="hidden" name="character_any" value="{{ filter_state.character_any }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.character_any %}
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="搜索角色">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>角色排除</h3>
+          <p>排除这些角色。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/characters">
+            <input type="hidden" name="character_not" value="{{ filter_state.character_not }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.character_not %}
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="排除角色">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>Tag 全含</h3>
+          <p>结果必须同时具备这些 Tag。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/tags">
+            <input type="hidden" name="tag_all" value="{{ filter_state.tag_all }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.tag_all %}
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="必须具备的 Tag">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>Tag 任一</h3>
+          <p>命中任意一个 Tag 即可。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/tags">
+            <input type="hidden" name="tag_any" value="{{ filter_state.tag_any }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.tag_any %}
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="任选 Tag">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card">
+          <h3>Tag 排除</h3>
+          <p>排除具备这些 Tag 的作品。</p>
+          <div class="selector" data-autocomplete-root data-api="/api/tags">
+            <input type="hidden" name="tag_not" value="{{ filter_state.tag_not }}">
+            <div class="selector__chips" data-chip-container>
+              {% for item in selected.tag_not %}
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+              {% endfor %}
+            </div>
+            <input type="text" data-autocomplete-input placeholder="排除 Tag">
+            <div class="selector__suggestions" data-suggestions hidden></div>
+          </div>
+        </section>
+
+        <section class="filter-card filter-card--full">
+          <h3>时间与热度</h3>
+          <p>按发布日期、浏览数、点赞数做范围筛选。</p>
+          <div class="metrics-grid">
+            <div class="field">
+              <label for="published_from">发布时间从</label>
+              <input id="published_from" name="published_from" type="date" data-conflicts="published_desc hot_desc" value="{{ filter_state.published_from }}">
+            </div>
+            <div class="field">
+              <label for="published_to">发布时间到</label>
+              <input id="published_to" name="published_to" type="date" data-conflicts="published_desc hot_desc" value="{{ filter_state.published_to }}">
+            </div>
+            <div class="field">
+              <label for="min_views">最少浏览</label>
+              <input id="min_views" name="min_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.min_views }}" placeholder="例如 1000">
+            </div>
+            <div class="field">
+              <label for="max_views">最多浏览</label>
+              <input id="max_views" name="max_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.max_views }}" placeholder="例如 50000">
+            </div>
+            <div class="field">
+              <label for="min_favorites">最少点赞</label>
+              <input id="min_favorites" name="min_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.min_favorites }}" placeholder="例如 100">
+            </div>
+            <div class="field">
+              <label for="max_favorites">最多点赞</label>
+              <input id="max_favorites" name="max_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.max_favorites }}" placeholder="例如 10000">
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="filter-actions">
+        <button class="btn btn--primary" type="submit">搜索</button>
+        <a class="btn btn--ghost" href="/">清空筛选</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="results-bar">{{ total }} 个结果</div>
+
+  {% if results %}
+    <section class="video-grid">
+      {% for movie in results %}
+        <article class="video-card">
+          <a class="video-card__cover" href="{{ request.url_for('movie_detail', source_site_id=movie.source_site_id) }}">
+            {% if movie.thumbnail_url %}
+              <img src="{{ movie.thumbnail_url }}" alt="{{ movie.title }}" loading="lazy">
+            {% else %}
+              <div class="video-card__placeholder">No image</div>
+            {% endif %}
+            <div class="video-card__stats">
+              <span><span class="material-symbols-outlined">remove_red_eye</span>{{ movie.view_count_display }}</span>
+              <span><span class="material-symbols-outlined">favorite</span>{{ movie.favorite_count_display }}</span>
+            </div>
+          </a>
+          <div class="video-card__body">
+            <h3 class="video-card__title"><a href="{{ request.url_for('movie_detail', source_site_id=movie.source_site_id) }}">{{ movie.title }}</a></h3>
+            <p class="video-card__author">{{ movie.author_name }}</p>
+            <div class="video-card__tags">
+              {% if movie.tags %}
+                {% for tag in movie.tags[:5] %}
+                  <span class="mini-tag">{{ tag.name }}</span>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  {% else %}
+    <section class="empty-state">
+      <h2>没有命中结果</h2>
+      <p>可以放宽标题条件，或者减少作者 / Tag 的排除规则。</p>
+    </section>
+  {% endif %}
+
+  {% if page_count > 1 %}
+    <nav class="pagination" aria-label="分页">
+      {% for item in pagination_items %}
+        {% if item.ellipsis %}
+          <span class="pagination__ellipsis">&hellip;</span>
+        {% elif item.active %}
+          <span class="pagination__item pagination__item--active">{{ item.page }}</span>
+        {% else %}
+          <a class="pagination__item" href="{{ item.href }}">{{ item.page }}</a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+  {% endif %}
+{% endblock %}
