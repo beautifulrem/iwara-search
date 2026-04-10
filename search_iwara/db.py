@@ -861,6 +861,154 @@ class Repository:
             "characters": characters,
         }
 
+    def get_related_movies(self, source_site_id: int, *, limit: int = 12) -> list[dict[str, Any]]:
+        """Find related movies based on shared author, characters, origins, and tags.
+
+        Scoring: same_author +10, each shared character +5, each shared origin +5,
+        each shared tag +1.  Only candidates with score > 0 are returned.
+        Ties are broken by popularity (view_count + favorite_count * 50) DESC.
+        """
+        # 1. Get the movie's internal id and author_id
+        row = self.conn.execute(
+            "SELECT id, author_id FROM movies WHERE source_site_id = ? AND status = 'active'",
+            (source_site_id,),
+        ).fetchone()
+        if row is None:
+            return []
+        movie_id = int(row["id"])
+        author_id = row["author_id"]
+
+        # 2. Collect related entity ids from join tables
+        character_ids = [
+            int(r["character_id"])
+            for r in self.conn.execute(
+                "SELECT character_id FROM movie_characters WHERE movie_id = ?", (movie_id,)
+            ).fetchall()
+        ]
+        origin_ids = [
+            int(r["origin_id"])
+            for r in self.conn.execute(
+                "SELECT origin_id FROM movie_origins WHERE movie_id = ?", (movie_id,)
+            ).fetchall()
+        ]
+        tag_ids = [
+            int(r["tag_id"])
+            for r in self.conn.execute(
+                "SELECT tag_id FROM movie_tags WHERE movie_id = ?", (movie_id,)
+            ).fetchall()
+        ]
+
+        # 3-6. Build candidate set, score, order, and limit in one query.
+        # Candidates are movies sharing at least one dimension with the source movie.
+        # We use a UNION of candidate movie_ids, then join back to compute scores.
+        union_parts: list[str] = []
+        params: list[Any] = []
+
+        if author_id is not None:
+            union_parts.append(
+                "SELECT id AS movie_id FROM movies WHERE author_id = ? AND id != ? AND status = 'active'"
+            )
+            params.extend([author_id, movie_id])
+
+        if character_ids:
+            ph = ", ".join("?" for _ in character_ids)
+            union_parts.append(
+                f"SELECT movie_id FROM movie_characters WHERE character_id IN ({ph}) AND movie_id != ?"
+            )
+            params.extend(character_ids)
+            params.append(movie_id)
+
+        if origin_ids:
+            ph = ", ".join("?" for _ in origin_ids)
+            union_parts.append(
+                f"SELECT movie_id FROM movie_origins WHERE origin_id IN ({ph}) AND movie_id != ?"
+            )
+            params.extend(origin_ids)
+            params.append(movie_id)
+
+        if tag_ids:
+            ph = ", ".join("?" for _ in tag_ids)
+            union_parts.append(
+                f"SELECT movie_id FROM movie_tags WHERE tag_id IN ({ph}) AND movie_id != ?"
+            )
+            params.extend(tag_ids)
+            params.append(movie_id)
+
+        if not union_parts:
+            return []
+
+        candidates_sql = " UNION ".join(union_parts)
+
+        # Build scoring sub-selects
+        author_score = "0"
+        author_params: list[Any] = []
+        if author_id is not None:
+            author_score = "CASE WHEN m.author_id = ? THEN 10 ELSE 0 END"
+            author_params = [author_id]
+
+        char_score = "0"
+        char_params: list[Any] = []
+        if character_ids:
+            ph = ", ".join("?" for _ in character_ids)
+            char_score = f"(SELECT COUNT(*) FROM movie_characters mc WHERE mc.movie_id = m.id AND mc.character_id IN ({ph})) * 5"
+            char_params = list(character_ids)
+
+        origin_score = "0"
+        origin_params: list[Any] = []
+        if origin_ids:
+            ph = ", ".join("?" for _ in origin_ids)
+            origin_score = f"(SELECT COUNT(*) FROM movie_origins mo WHERE mo.movie_id = m.id AND mo.origin_id IN ({ph})) * 5"
+            origin_params = list(origin_ids)
+
+        tag_score = "0"
+        tag_params: list[Any] = []
+        if tag_ids:
+            ph = ", ".join("?" for _ in tag_ids)
+            tag_score = f"(SELECT COUNT(*) FROM movie_tags mt WHERE mt.movie_id = m.id AND mt.tag_id IN ({ph}))"
+            tag_params = list(tag_ids)
+
+        score_expr = f"({author_score} + {char_score} + {origin_score} + {tag_score})"
+
+        sql = f"""
+            SELECT
+                m.source_site_id,
+                m.title,
+                m.thumbnail_url,
+                m.view_count,
+                m.favorite_count,
+                m.published_at,
+                m.external_video_url,
+                COALESCE(a.name, m.author_display_name, 'Unknown') AS author_name,
+                {score_expr} AS rel_score,
+                {POPULARITY_SCORE_SQL} AS popularity
+            FROM movies m
+            LEFT JOIN authors a ON a.id = m.author_id
+            WHERE m.id IN (SELECT movie_id FROM ({candidates_sql}))
+              AND m.status = 'active'
+              AND {score_expr} > 0
+            ORDER BY rel_score DESC, popularity DESC
+            LIMIT ?
+        """
+
+        all_params = author_params + char_params + origin_params + tag_params + params + author_params + char_params + origin_params + tag_params + [limit]
+
+        rows = self.conn.execute(sql, all_params).fetchall()
+        return [
+            {
+                "source_site_id": int(r["source_site_id"]),
+                "title": str(r["title"]),
+                "thumbnail_url": r["thumbnail_url"],
+                "view_count": r["view_count"],
+                "favorite_count": r["favorite_count"],
+                "view_count_display": format_number(r["view_count"]),
+                "favorite_count_display": format_number(r["favorite_count"]),
+                "published_at": r["published_at"],
+                "external_video_url": r["external_video_url"],
+                "author_name": str(r["author_name"]),
+            }
+            for r in rows
+        ]
+
     def sidebar_rankings(self, *, per_section_limit: int = 12) -> dict[str, list[dict[str, Any]]]:
         return {
             "characters": self.list_entity_rankings("characters", limit=per_section_limit),

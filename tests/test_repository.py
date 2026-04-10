@@ -164,3 +164,61 @@ def test_repository_replaces_tag_links_without_duplicates(tmp_path: Path):
     assert movie["title"] == "alpha updated"
     assert [tag["id"] for tag in movie["tags"]] == [2]
     repo.close()
+
+
+def test_get_related_movies(tmp_path: Path):
+    repo = Repository.open(tmp_path / "related.sqlite3")
+    with repo.transaction():
+        # Movie A: author=10, characters=[21], origins=[11], tags=[1,2]
+        repo.apply_movie_detail(
+            make_detail(
+                101, title="movie A", author=(10, "Author A"),
+                tags=[(1, "dance"), (2, "voice")],
+                origins=[(11, "Genshin")],
+                characters=[(21, "Amber")],
+            )
+        )
+        # Movie B: same author=10, shared character=21, shared tag=1
+        # Expected score: 10 (author) + 5 (character 21) + 1 (tag 1) = 16
+        repo.apply_movie_detail(
+            make_detail(
+                102, title="movie B", author=(10, "Author A"),
+                tags=[(1, "dance"), (3, "mmd")],
+                origins=[(12, "Vocaloid")],
+                characters=[(21, "Amber"), (22, "Lumine")],
+            )
+        )
+        # Movie C: different author, shared origin=11, shared tag=2
+        # Expected score: 0 (author) + 5 (origin 11) + 1 (tag 2) = 6
+        repo.apply_movie_detail(
+            make_detail(
+                103, title="movie C", author=(20, "Author B"),
+                tags=[(2, "voice"), (4, "r18")],
+                origins=[(11, "Genshin")],
+                characters=[(23, "Lisa")],
+            )
+        )
+        # Movie D: no overlap at all
+        # Expected score: 0
+        repo.apply_movie_detail(
+            make_detail(
+                104, title="movie D", author=(30, "Author C"),
+                tags=[(5, "solo")],
+                origins=[(13, "Honkai")],
+                characters=[(24, "Bronya")],
+            )
+        )
+
+    related = repo.get_related_movies(101, limit=12)
+    # B scores 16, C scores 6, D scores 0 (excluded)
+    assert len(related) == 2
+    assert related[0]["source_site_id"] == 102
+    assert related[1]["source_site_id"] == 103
+    # Verify card-compatible fields exist
+    assert "title" in related[0]
+    assert "thumbnail_url" in related[0]
+    assert "view_count_display" in related[0]
+    assert "favorite_count_display" in related[0]
+    assert "author_name" in related[0]
+
+    repo.close()
