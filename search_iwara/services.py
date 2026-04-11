@@ -74,6 +74,7 @@ class SyncService:
                 current_page = max(last_completed + 1, 1)
         else:
             current_page = max(start_page, 1)
+        initial_completed_pages = current_page - 1
 
         first_listing = await self.client.fetch_listing_page(current_page)
         target_last_page = first_listing.last_page
@@ -129,7 +130,7 @@ class SyncService:
                 label=label,
                 total_items=len(detail_ids_for_batch),
                 batch_pages=len(listings),
-                pages_completed_before_batch=summary.pages_checked - len(listings),
+                pages_completed_before_batch=initial_completed_pages + summary.pages_checked - len(listings),
                 total_pages=final_page,
                 current_page=last_processed_page or next_page,
             )
@@ -157,9 +158,9 @@ class SyncService:
             label="pending details",
             total_items=len(pending_ids),
             batch_pages=0,
-            pages_completed_before_batch=summary.pages_checked,
+            pages_completed_before_batch=initial_completed_pages + summary.pages_checked,
             total_pages=final_page,
-            current_page=summary.pages_checked if summary.pages_checked > 0 else current_page,
+            current_page=initial_completed_pages + summary.pages_checked if summary.pages_checked > 0 else current_page,
         )
         await self._sync_movie_details(
             pending_ids,
