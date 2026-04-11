@@ -58,9 +58,10 @@ def test_web_search_and_detail_routes(tmp_path: Path):
     assert response.status_code == 200
     assert "sunrise yelan mix" in response.text
     assert "Tag Alpha" in response.text
-    assert "人気キャラ" in response.text
-    assert "人気作者" in response.text
-    assert "人気カテゴリ" in response.text
+    assert "热门角色" in response.text
+    assert "热门作者" in response.text
+    assert "热门分类" in response.text
+    assert 'href="/categories"' in response.text
 
     origin_filter = client.get("/", params={"origin_any": "41", "character_any": "51", "min_views": "1000"})
     assert origin_filter.status_code == 200
@@ -68,7 +69,7 @@ def test_web_search_and_detail_routes(tmp_path: Path):
 
     hot_alias = client.get("/", params={"sort": "hot"})
     assert hot_alias.status_code == 200
-    assert "急上昇" in hot_alias.text
+    assert "飙升" in hot_alias.text
 
     detail = client.get("/movies/200")
     assert detail.status_code == 200
@@ -77,7 +78,7 @@ def test_web_search_and_detail_routes(tmp_path: Path):
     assert "/?origin_any=41" in detail.text
     assert "/?character_any=51" in detail.text
     assert "theme-toggle" in detail.text
-    assert "人気キャラ" in detail.text
+    assert "热门角色" in detail.text
 
     authors = client.get("/api/authors", params={"query": "eleven"})
     assert authors.status_code == 200
@@ -99,12 +100,23 @@ def test_web_search_and_detail_routes(tmp_path: Path):
     assert authors_page.status_code == 200
     assert "热门作者" in authors_page.text
     assert "Author Eleven" in authors_page.text
-    assert "人気キャラ" in authors_page.text
+    assert "热门角色" in authors_page.text
 
     characters_page = client.get("/characters")
     assert characters_page.status_code == 200
     assert "热门角色" in characters_page.text
     assert "Character One" in characters_page.text
+
+    categories_page = client.get("/categories")
+    assert categories_page.status_code == 200
+    assert "热门分类" in categories_page.text
+    assert "Tag Alpha" in categories_page.text or "Origin Prime" in categories_page.text
+
+    ja_page = client.get("/", params={"lang": "ja"})
+    assert ja_page.status_code == 200
+    assert "人気キャラ" in ja_page.text
+    assert "急上昇" in ja_page.text
+    assert "フィルター" in ja_page.text
 
 
 def test_detail_page_shows_related_movies(tmp_path: Path):
@@ -116,5 +128,5 @@ def test_detail_page_shows_related_movies(tmp_path: Path):
 
     detail = client.get("/movies/200")
     assert detail.status_code == 200
-    assert "関連動画" in detail.text
+    assert "相关视频" in detail.text
     assert "sunset yelan dance" in detail.text

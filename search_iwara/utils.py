@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
@@ -21,7 +22,9 @@ def utc_now() -> str:
 def clean_text(value: str | None) -> str:
     if not value:
         return ""
-    return re.sub(r"\s+", " ", value).strip()
+    normalized = unicodedata.normalize("NFKC", value)
+    normalized = normalized.replace("\u200b", "").replace("\ufeff", "")
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def absolute_url(value: str | None) -> str | None:

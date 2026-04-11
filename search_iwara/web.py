@@ -10,11 +10,18 @@ from fastapi.templating import Jinja2Templates
 
 from .config import PACKAGE_ROOT, get_settings
 from .db import Repository
+from .i18n import SUPPORTED_LANGS, build_translator, html_lang, resolve_lang, switch_lang, translate
 from .models import SearchFilters
 from .utils import pagination_window, parse_csv_ids, parse_optional_int, update_query_params
 
 
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_ROOT / "templates"))
+STATIC_VERSION = str(
+    max(
+        int((PACKAGE_ROOT / "static" / "app.js").stat().st_mtime),
+        int((PACKAGE_ROOT / "static" / "style.css").stat().st_mtime),
+    )
+)
 
 SORT_ALIASES = {
     "hot": "hot_desc",
@@ -34,14 +41,6 @@ VALID_SORTS = {
     "views_desc",
     "views_asc",
 }
-
-ENTITY_LABELS = {
-    "authors": "热门作者",
-    "characters": "热门角色",
-    "tags": "热门标签",
-    "origins": "热门原作",
-}
-
 
 def _build_filters(
     *,
@@ -136,9 +135,47 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         finally:
             repo.close()
 
+    def common_page_context(request: Request, lang: str) -> dict[str, Any]:
+        tr = build_translator(lang)
+        other_lang = switch_lang(lang)
+        switch_query = dict(request.query_params)
+        switch_query["lang"] = other_lang
+        switch_query_string = update_query_params({}, **switch_query)
+        switch_lang_href = request.url.path if not switch_query_string else f"{request.url.path}?{switch_query_string}"
+        return {
+            "lang": lang,
+            "html_lang": html_lang(lang),
+            "tr": tr,
+            "switch_lang_href": switch_lang_href,
+            "switch_lang_label": tr("header.switch_lang"),
+            "static_version": STATIC_VERSION,
+        }
+
+    def render_page(
+        request: Request,
+        template_name: str,
+        context: dict[str, Any],
+        *,
+        lang: str,
+        lang_param: str | None,
+    ) -> HTMLResponse:
+        response = TEMPLATES.TemplateResponse(
+            request,
+            template_name,
+            {
+                "request": request,
+                **common_page_context(request, lang),
+                **context,
+            },
+        )
+        if lang_param in SUPPORTED_LANGS:
+            response.set_cookie("ui_lang", lang, max_age=60 * 60 * 24 * 365, samesite="lax")
+        return response
+
     @app.get("/", response_class=HTMLResponse, name="index")
     def index(
         request: Request,
+        lang: str | None = Query(None),
         q: str = Query("", description="Title query"),
         title_mode: str = Query("all"),
         author_any: str = Query(""),
@@ -160,6 +197,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         page: int = Query(1, ge=1),
         repo: Repository = Depends(get_repo),
     ) -> HTMLResponse:
+        resolved_lang = resolve_lang(lang, request.cookies.get("ui_lang"))
         filters = _build_filters(
             q=q,
             title_mode=title_mode,
@@ -208,11 +246,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             query = update_query_params({}, **updates)
             return "/" if not query else f"/?{query}"
 
-        return TEMPLATES.TemplateResponse(
+        return render_page(
             request,
             "index.html",
             {
-                "request": request,
                 "filters": filters,
                 "filter_state": {
                     "author_any": author_any,
@@ -241,14 +278,18 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 "fresh_search_href": fresh_search_href,
                 "sidebar": sidebar,
             },
+            lang=resolved_lang,
+            lang_param=lang,
         )
 
     @app.get("/movies/{source_site_id}", response_class=HTMLResponse, name="movie_detail")
     def movie_detail(
         request: Request,
         source_site_id: int,
+        lang: str | None = Query(None),
         repo: Repository = Depends(get_repo),
     ) -> HTMLResponse:
+        resolved_lang = resolve_lang(lang, request.cookies.get("ui_lang"))
         movie = repo.get_movie(source_site_id)
         if movie is None:
             raise HTTPException(status_code=404, detail="Movie not found")
@@ -259,16 +300,17 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             query = update_query_params({}, **updates)
             return "/" if not query else f"/?{query}"
 
-        return TEMPLATES.TemplateResponse(
+        return render_page(
             request,
             "movie_detail.html",
             {
-                "request": request,
                 "movie": movie,
                 "related_movies": related_movies,
                 "sidebar": repo.sidebar_rankings(),
                 "search_href": search_href,
             },
+            lang=resolved_lang,
+            lang_param=lang,
         )
 
     @app.get("/api/authors", name="authors_autocomplete")
@@ -303,18 +345,26 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/characters", response_class=HTMLResponse, name="characters_index")
     @app.get("/tags", response_class=HTMLResponse, name="tags_index")
     @app.get("/origins", response_class=HTMLResponse, name="origins_index")
+    @app.get("/categories", response_class=HTMLResponse, name="categories_index")
     def entity_index(
         request: Request,
+        lang: str | None = Query(None),
         page: int = Query(1, ge=1),
         repo: Repository = Depends(get_repo),
     ) -> HTMLResponse:
+        resolved_lang = resolve_lang(lang, request.cookies.get("ui_lang"))
+        tr = build_translator(resolved_lang)
         path = request.url.path.strip("/")
-        if path not in ENTITY_LABELS:
+        if path not in {"authors", "characters", "tags", "origins", "categories"}:
             raise HTTPException(status_code=404, detail="Entity listing not found")
         per_page = 60
         offset = (page - 1) * per_page
-        items = repo.list_entity_rankings(path, limit=per_page, offset=offset)
-        total = len(repo.list_entity_rankings(path, limit=10_000, offset=0))
+        if path == "categories":
+            items = repo.list_category_rankings(limit=per_page, offset=offset)
+            total = len(repo.list_category_rankings(limit=10_000, offset=0))
+        else:
+            items = repo.list_entity_rankings(path, limit=per_page, offset=offset)
+            total = len(repo.list_entity_rankings(path, limit=10_000, offset=0))
         page_count = max(1, (total + per_page - 1) // per_page)
 
         author_movies: dict[int, list[dict[str, Any]]] = {}
@@ -326,13 +376,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             query = update_query_params({}, **updates)
             return "/" if not query else f"/?{query}"
 
-        return TEMPLATES.TemplateResponse(
+        return render_page(
             request,
             "entity_index.html",
             {
-                "request": request,
                 "entity_kind": path,
-                "entity_title": ENTITY_LABELS[path],
+                "entity_title": tr(f"entity.{path}"),
                 "items": items,
                 "author_movies": author_movies,
                 "page": page,
@@ -341,6 +390,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 "sidebar": repo.sidebar_rankings(),
                 "search_href": search_href,
             },
+            lang=resolved_lang,
+            lang_param=lang,
         )
 
     return app

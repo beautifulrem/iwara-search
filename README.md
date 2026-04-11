@@ -172,4 +172,6 @@ tests/
 
 ## License
 
-This project is for personal use. It mirrors publicly available metadata from Oreno3D for local search purposes.
+This project is licensed under the MIT License.
+
+See [LICENSE](/path/to/repo/LICENSE).

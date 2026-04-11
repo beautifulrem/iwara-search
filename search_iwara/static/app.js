@@ -86,6 +86,7 @@ function debounce(fn, delay) {
 }
 
 function createChip(id, name, negative) {
+  var deleteLabel = document.body && document.body.dataset.deleteLabel ? document.body.dataset.deleteLabel : "Delete";
   var chip = document.createElement("span");
   chip.className = negative ? "chip chip--negative" : "chip";
   chip.dataset.id = String(id);
@@ -93,7 +94,7 @@ function createChip(id, name, negative) {
 
   var button = document.createElement("button");
   button.type = "button";
-  button.setAttribute("aria-label", "删除");
+  button.setAttribute("aria-label", deleteLabel);
   button.textContent = "\u00d7";
   chip.appendChild(button);
   return chip;

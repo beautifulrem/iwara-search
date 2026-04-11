@@ -1,28 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Search Iwara{% endblock %}
+{% block title %}{{ tr("brand") }}{% endblock %}
 
 {% block content %}
   <div class="sort-bar">
     <a class="sort-tab {% if filters.sort == 'hot_desc' %}sort-tab--active{% endif %}"
-       href="{{ search_href(sort='hot_desc', published_from=none, published_to=none, min_views=none, max_views=none, min_favorites=none, max_favorites=none) }}">
-      <span class="material-symbols-outlined">trending_up</span><span>急上昇</span>
+      href="{{ search_href(sort='hot_desc', published_from=none, published_to=none, min_views=none, max_views=none, min_favorites=none, max_favorites=none) }}">
+      <span class="material-symbols-outlined">trending_up</span><span>{{ tr("sort.hot") }}</span>
     </a>
     <a class="sort-tab {% if filters.sort == 'favorites_desc' %}sort-tab--active{% endif %}"
        href="{{ search_href(sort='favorites_desc', min_favorites=none, max_favorites=none) }}">
-      <span class="material-symbols-outlined">favorite</span><span>高評価</span>
+      <span class="material-symbols-outlined">favorite</span><span>{{ tr("sort.favorites") }}</span>
     </a>
     <a class="sort-tab {% if filters.sort == 'published_desc' %}sort-tab--active{% endif %}"
        href="{{ search_href(sort='published_desc', published_from=none, published_to=none) }}">
-      <span class="material-symbols-outlined">fiber_new</span><span>新着</span>
+      <span class="material-symbols-outlined">fiber_new</span><span>{{ tr("sort.latest") }}</span>
     </a>
     <a class="sort-tab {% if filters.sort == 'popularity_desc' %}sort-tab--active{% endif %}"
        href="{{ search_href(sort='popularity_desc', min_views=none, max_views=none, min_favorites=none, max_favorites=none) }}">
-      <span class="material-symbols-outlined">emoji_events</span><span>人気</span>
+      <span class="material-symbols-outlined">emoji_events</span><span>{{ tr("sort.popularity") }}</span>
     </a>
     <span class="sort-bar__spacer"></span>
     <button class="filter-toggle-btn" id="filter-toggle" type="button">
-      <span class="material-symbols-outlined">tune</span><span>フィルター</span>
+      <span class="material-symbols-outlined">tune</span><span>{{ tr("sort.filter") }}</span>
     </button>
   </div>
 
@@ -31,180 +31,180 @@
       <input type="hidden" name="sort" id="sort-hidden" value="{{ filters.sort }}">
       <div class="filter-grid">
         <section class="filter-card">
-          <h3>作者包含任一</h3>
-          <p>命中任意一个作者即可。</p>
+          <h3>{{ tr("filter.author_any.title") }}</h3>
+          <p>{{ tr("filter.author_any.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/authors">
             <input type="hidden" name="author_any" value="{{ filter_state.author_any }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.author_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="搜索作者名">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.author_any.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>作者排除</h3>
-          <p>排除这些作者的作品。</p>
+          <h3>{{ tr("filter.author_not.title") }}</h3>
+          <p>{{ tr("filter.author_not.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/authors">
             <input type="hidden" name="author_not" value="{{ filter_state.author_not }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.author_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="排除作者">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.author_not.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>原作包含任一</h3>
-          <p>命中任意一个原作即可。</p>
+          <h3>{{ tr("filter.origin_any.title") }}</h3>
+          <p>{{ tr("filter.origin_any.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/origins">
             <input type="hidden" name="origin_any" value="{{ filter_state.origin_any }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.origin_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="搜索原作">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.origin_any.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>原作排除</h3>
-          <p>排除这些原作。</p>
+          <h3>{{ tr("filter.origin_not.title") }}</h3>
+          <p>{{ tr("filter.origin_not.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/origins">
             <input type="hidden" name="origin_not" value="{{ filter_state.origin_not }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.origin_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="排除原作">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.origin_not.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>角色包含任一</h3>
-          <p>命中任意一个角色即可。</p>
+          <h3>{{ tr("filter.character_any.title") }}</h3>
+          <p>{{ tr("filter.character_any.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/characters">
             <input type="hidden" name="character_any" value="{{ filter_state.character_any }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.character_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="搜索角色">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.character_any.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>角色排除</h3>
-          <p>排除这些角色。</p>
+          <h3>{{ tr("filter.character_not.title") }}</h3>
+          <p>{{ tr("filter.character_not.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/characters">
             <input type="hidden" name="character_not" value="{{ filter_state.character_not }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.character_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="排除角色">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.character_not.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>Tag 全含</h3>
-          <p>结果必须同时具备这些 Tag。</p>
+          <h3>{{ tr("filter.tag_all.title") }}</h3>
+          <p>{{ tr("filter.tag_all.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/tags">
             <input type="hidden" name="tag_all" value="{{ filter_state.tag_all }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.tag_all %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="必须具备的 Tag">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.tag_all.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>Tag 任一</h3>
-          <p>命中任意一个 Tag 即可。</p>
+          <h3>{{ tr("filter.tag_any.title") }}</h3>
+          <p>{{ tr("filter.tag_any.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/tags">
             <input type="hidden" name="tag_any" value="{{ filter_state.tag_any }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.tag_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="任选 Tag">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.tag_any.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card">
-          <h3>Tag 排除</h3>
-          <p>排除具备这些 Tag 的作品。</p>
+          <h3>{{ tr("filter.tag_not.title") }}</h3>
+          <p>{{ tr("filter.tag_not.desc") }}</p>
           <div class="selector" data-autocomplete-root data-api="/api/tags">
             <input type="hidden" name="tag_not" value="{{ filter_state.tag_not }}">
             <div class="selector__chips" data-chip-container>
               {% for item in selected.tag_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="删除">×</button></span>
+                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
               {% endfor %}
             </div>
-            <input type="text" data-autocomplete-input placeholder="排除 Tag">
+            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.tag_not.placeholder') }}">
             <div class="selector__suggestions" data-suggestions hidden></div>
           </div>
         </section>
 
         <section class="filter-card filter-card--full">
-          <h3>时间与热度</h3>
-          <p>按发布日期、浏览数、点赞数做范围筛选。</p>
+          <h3>{{ tr("filter.metrics.title") }}</h3>
+          <p>{{ tr("filter.metrics.desc") }}</p>
           <div class="metrics-grid">
             <div class="field">
-              <label for="published_from">发布时间从</label>
+              <label for="published_from">{{ tr("filter.metrics.published_from") }}</label>
               <input id="published_from" name="published_from" type="date" data-conflicts="published_desc hot_desc" value="{{ filter_state.published_from }}">
             </div>
             <div class="field">
-              <label for="published_to">发布时间到</label>
+              <label for="published_to">{{ tr("filter.metrics.published_to") }}</label>
               <input id="published_to" name="published_to" type="date" data-conflicts="published_desc hot_desc" value="{{ filter_state.published_to }}">
             </div>
             <div class="field">
-              <label for="min_views">最少浏览</label>
-              <input id="min_views" name="min_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.min_views }}" placeholder="例如 1000">
+              <label for="min_views">{{ tr("filter.metrics.min_views") }}</label>
+              <input id="min_views" name="min_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.min_views }}" placeholder="{{ tr('filter.metrics.min_views_placeholder') }}">
             </div>
             <div class="field">
-              <label for="max_views">最多浏览</label>
-              <input id="max_views" name="max_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.max_views }}" placeholder="例如 50000">
+              <label for="max_views">{{ tr("filter.metrics.max_views") }}</label>
+              <input id="max_views" name="max_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.max_views }}" placeholder="{{ tr('filter.metrics.max_views_placeholder') }}">
             </div>
             <div class="field">
-              <label for="min_favorites">最少点赞</label>
-              <input id="min_favorites" name="min_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.min_favorites }}" placeholder="例如 100">
+              <label for="min_favorites">{{ tr("filter.metrics.min_favorites") }}</label>
+              <input id="min_favorites" name="min_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.min_favorites }}" placeholder="{{ tr('filter.metrics.min_favorites_placeholder') }}">
             </div>
             <div class="field">
-              <label for="max_favorites">最多点赞</label>
-              <input id="max_favorites" name="max_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.max_favorites }}" placeholder="例如 10000">
+              <label for="max_favorites">{{ tr("filter.metrics.max_favorites") }}</label>
+              <input id="max_favorites" name="max_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.max_favorites }}" placeholder="{{ tr('filter.metrics.max_favorites_placeholder') }}">
             </div>
           </div>
         </section>
       </div>
 
       <div class="filter-actions">
-        <button class="btn btn--primary" type="submit">搜索</button>
-        <a class="btn btn--ghost" href="/">清空筛选</a>
+        <button class="btn btn--primary" type="submit">{{ tr("filter.submit") }}</button>
+        <a class="btn btn--ghost" href="/">{{ tr("filter.clear") }}</a>
       </div>
     </form>
   </div>
 
-  <div class="results-bar">{{ total }} 个结果</div>
+  <div class="results-bar">{{ tr("results.count", count=total) }}</div>
 
   {% if results %}
     <section class="video-grid">
@@ -214,7 +214,7 @@
             {% if movie.thumbnail_url %}
               <img src="{{ movie.thumbnail_url }}" alt="{{ movie.title }}" loading="lazy">
             {% else %}
-              <div class="video-card__placeholder">No image</div>
+              <div class="video-card__placeholder">{{ tr("common.no_image") }}</div>
             {% endif %}
             <div class="video-card__stats">
               <span><span class="material-symbols-outlined">remove_red_eye</span>{{ movie.view_count_display }}</span>
@@ -237,13 +237,13 @@
     </section>
   {% else %}
     <section class="empty-state">
-      <h2>没有命中结果</h2>
-      <p>可以放宽标题条件，或者减少作者 / Tag 的排除规则。</p>
+      <h2>{{ tr("results.empty.title") }}</h2>
+      <p>{{ tr("results.empty.body") }}</p>
     </section>
   {% endif %}
 
   {% if page_count > 1 %}
-    <nav class="pagination" aria-label="分页">
+    <nav class="pagination" aria-label="{{ tr('pagination.aria') }}">
       {% for item in pagination_items %}
         {% if item.ellipsis %}
           <span class="pagination__ellipsis">&hellip;</span>

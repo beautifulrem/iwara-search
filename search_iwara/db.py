@@ -1096,9 +1096,10 @@ class Repository:
         ).fetchall()
         return [self._format_entity_ranking_row(row, kind=kind) for row in rows]
 
-    def list_category_rankings(self, *, limit: int = 12) -> list[dict[str, Any]]:
-        tags = self.list_entity_rankings("tags", limit=limit)
-        origins = self.list_entity_rankings("origins", limit=limit)
+    def list_category_rankings(self, *, limit: int = 12, offset: int = 0) -> list[dict[str, Any]]:
+        source_limit = limit + offset
+        tags = self.list_entity_rankings("tags", limit=source_limit)
+        origins = self.list_entity_rankings("origins", limit=source_limit)
 
         items = [
             {
@@ -1124,7 +1125,7 @@ class Repository:
             ),
             reverse=True,
         )
-        return items[:limit]
+        return items[offset: offset + limit]
 
     def _format_entity_ranking_row(self, row: sqlite3.Row, *, kind: str) -> dict[str, Any]:
         return {

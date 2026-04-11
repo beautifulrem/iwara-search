@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}{{ movie.title }} · Search Iwara{% endblock %}
+{% block title %}{{ movie.title }} · {{ tr("brand") }}{% endblock %}
 
 {% block content %}
   <nav class="detail-breadcrumb">
-    <a href="/">ホーム</a>
+    <a href="/">{{ tr("detail.breadcrumb.home") }}</a>
     {% if movie.origins %}
       <span class="detail-breadcrumb__sep">&gt;</span>
       <a href="/?origin_any={{ movie.origins[0].id }}">{{ movie.origins[0].name }}</a>
@@ -14,7 +14,7 @@
       <a href="/?character_any={{ movie.characters[0].id }}">{{ movie.characters[0].name }}</a>
     {% endif %}
     <span class="detail-breadcrumb__sep">&gt;</span>
-    <span>動画</span>
+    <span>{{ tr("detail.breadcrumb.video") }}</span>
   </nav>
 
   <div class="detail-thumbnail">
@@ -27,22 +27,22 @@
 
   <div class="detail-meta">
     {% if movie.published_at %}<span>{{ movie.published_at }}</span>{% endif %}
-    <span>{{ movie.view_count_display }} views</span>
-    <span class="accent">{{ movie.favorite_count_display }} favorites</span>
-    <span class="status-pill {% if movie.status == 'missing' %}status-pill--missing{% endif %}">{{ movie.status }}</span>
+    <span>{{ tr("detail.views", count=movie.view_count_display) }}</span>
+    <span class="accent">{{ tr("detail.favorites", count=movie.favorite_count_display) }}</span>
+    <span class="status-pill {% if movie.status == 'missing' %}status-pill--missing{% endif %}">{{ tr("detail.status." ~ movie.status) }}</span>
   </div>
 
   <div class="detail-actions">
     {% if movie.external_video_url %}
-      <a class="btn btn--primary" href="{{ movie.external_video_url }}" target="_blank" rel="noopener">打开 Iwara</a>
+      <a class="btn btn--primary" href="{{ movie.external_video_url }}" target="_blank" rel="noopener">{{ tr("detail.open_iwara") }}</a>
     {% endif %}
-    <a class="btn btn--ghost" href="{{ movie.oreno3d_url }}" target="_blank" rel="noopener">打开 Oreno3D</a>
-    <a class="btn btn--ghost" href="/">返回搜索</a>
+    <a class="btn btn--ghost" href="{{ movie.oreno3d_url }}" target="_blank" rel="noopener">{{ tr("detail.open_oreno3d") }}</a>
+    <a class="btn btn--ghost" href="/">{{ tr("detail.back_search") }}</a>
   </div>
 
   <div class="meta-grid">
     <div class="meta-card">
-      <h3>作成者</h3>
+      <h3>{{ tr("detail.creator") }}</h3>
       <div class="meta-card__items">
         {% if movie.author_source_id %}
           <a class="meta-chip" href="{{ search_href(author_any=movie.author_source_id) }}">{{ movie.author_name }}</a>
@@ -52,7 +52,7 @@
       </div>
     </div>
     <div class="meta-card">
-      <h3>原作</h3>
+      <h3>{{ tr("detail.origin") }}</h3>
       <div class="meta-card__items">
         {% if movie.origins %}
           {% for origin in movie.origins %}
@@ -64,7 +64,7 @@
       </div>
     </div>
     <div class="meta-card">
-      <h3>キャラ</h3>
+      <h3>{{ tr("detail.character") }}</h3>
       <div class="meta-card__items">
         {% if movie.characters %}
           {% for character in movie.characters %}
@@ -76,7 +76,7 @@
       </div>
     </div>
     <div class="meta-card">
-      <h3>タグ</h3>
+      <h3>{{ tr("detail.tag") }}</h3>
       <div class="meta-card__items">
         {% if movie.tags %}
           {% for tag in movie.tags %}
@@ -95,7 +95,7 @@
 
   {% if related_movies %}
     <section class="related-section">
-      <h2>関連動画</h2>
+      <h2>{{ tr("detail.related") }}</h2>
       <div class="video-grid">
         {% for rel in related_movies %}
           <article class="video-card">
@@ -103,7 +103,7 @@
               {% if rel.thumbnail_url %}
                 <img src="{{ rel.thumbnail_url }}" alt="{{ rel.title }}" loading="lazy">
               {% else %}
-                <div class="video-card__placeholder">No image</div>
+                <div class="video-card__placeholder">{{ tr("detail.no_image") }}</div>
               {% endif %}
               <div class="video-card__stats">
                 <span><span class="material-symbols-outlined">remove_red_eye</span>{{ rel.view_count_display }}</span>

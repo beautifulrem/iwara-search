@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ entity_title }} · Search Iwara{% endblock %}
+{% block title %}{{ entity_title }} · {{ tr("brand") }}{% endblock %}
 
 {% block content %}
   <h1 style="margin:0 0 16px; font-size:1.4rem;">{{ entity_title }}</h1>
@@ -11,8 +11,8 @@
         <div class="author-entry__header">
           <span class="author-entry__rank">#{{ loop.index + (page - 1) * 60 }}</span>
           <span class="author-entry__name">{{ item.name }}</span>
-          <span style="font-size:0.82rem; color:var(--text-secondary);">{{ item.movie_count }} 部 &middot; {{ item.total_favorites_display }} ♥</span>
-          <a class="btn btn--ghost" href="{{ search_href(author_any=item.source_id) }}">查看作品</a>
+          <span style="font-size:0.82rem; color:var(--text-secondary);">{{ tr("entity.movie_count_and_favorites", count=item.movie_count, favorites=item.total_favorites_display) }}</span>
+          <a class="btn btn--ghost" href="{{ search_href(author_any=item.source_id) }}">{{ tr("entity.open") }}</a>
         </div>
         {% if author_movies is defined and author_movies.get(item.source_id) %}
           <div class="author-carousel">
@@ -22,7 +22,7 @@
                   {% if mv.thumbnail_url %}
                     <img src="{{ mv.thumbnail_url }}" alt="{{ mv.title }}" loading="lazy">
                   {% else %}
-                    <div class="video-card__placeholder">No image</div>
+                    <div class="video-card__placeholder">{{ tr("common.no_image") }}</div>
                   {% endif %}
                   <div class="video-card__stats">
                     <span><span class="material-symbols-outlined">remove_red_eye</span>{{ mv.view_count_display }}</span>
@@ -46,20 +46,31 @@
           <span class="entity-row__name">
             {% if entity_kind == 'characters' %}
               <a href="{{ search_href(character_any=item.source_id) }}">{{ item.name }}</a>
+            {% elif entity_kind == 'categories' %}
+              {% if item.kind == 'tags' %}
+                <a href="{{ search_href(tag_any=item.source_id) }}">{{ item.name }}</a>
+              {% else %}
+                <a href="{{ search_href(origin_any=item.source_id) }}">{{ item.name }}</a>
+              {% endif %}
             {% elif entity_kind == 'tags' %}
               <a href="{{ search_href(tag_any=item.source_id) }}">{{ item.name }}</a>
             {% else %}
               <a href="{{ search_href(origin_any=item.source_id) }}">{{ item.name }}</a>
             {% endif %}
           </span>
-          <span class="entity-row__stat">{{ item.movie_count }} 部 &middot; {{ item.total_favorites_display }} ♥</span>
+          <span class="entity-row__stat">
+            {{ tr("entity.movie_count_and_favorites", count=item.movie_count, favorites=item.total_favorites_display) }}
+            {% if entity_kind == 'categories' %}
+              · {{ item.label }}
+            {% endif %}
+          </span>
         </div>
       {% endfor %}
     </div>
   {% endif %}
 
   {% if page_count > 1 %}
-    <nav class="pagination" aria-label="分页">
+    <nav class="pagination" aria-label="{{ tr('pagination.aria') }}">
       {% for item in pagination_items %}
         {% if item.ellipsis %}
           <span class="pagination__ellipsis">&hellip;</span>
