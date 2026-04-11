@@ -8,6 +8,7 @@ dependencies = [
   "fastapi>=0.115,<1.0",
   "httpx>=0.28,<1.0",
   "jinja2>=3.1,<4.0",
+  "rich>=13.9,<15.0",
   "selectolax>=0.3,<1.0",
   "typer>=0.16,<1.0",
   "uvicorn>=0.35,<1.0",
@@ -24,6 +25,16 @@ search-iwara = "search_iwara.cli:main"
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["search_iwara*"]
+exclude = ["data*", "docs*", "tests*"]
+
+[tool.setuptools.package-data]
+search_iwara = ["templates/*.html", "static/*"]
 
 [build-system]
 requires = ["setuptools>=80", "wheel"]

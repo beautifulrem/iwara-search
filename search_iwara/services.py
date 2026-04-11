@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Protocol
 
 from .crawler import Oreno3dClient, RemoteNotFoundError
 from .db import Repository
@@ -20,12 +21,37 @@ class SyncSummary:
     failed_details: int = 0
 
 
+class SyncProgressReporter(Protocol):
+    def on_page_plan(self, *, mode: str, current_page: int, total_pages: int | None) -> None: ...
+
+    def on_page_processed(
+        self,
+        *,
+        mode: str,
+        page: int,
+        pages_checked: int,
+        total_pages: int | None,
+        stable_pages: int | None = None,
+        stable_page_limit: int | None = None,
+    ) -> None: ...
+
+    def on_detail_batch_start(self, *, label: str, total_items: int) -> None: ...
+
+    def on_detail_item_done(self, *, label: str, processed_items: int, total_items: int) -> None: ...
+
+
 class SyncService:
     def __init__(self, repo: Repository, client: Oreno3dClient):
         self.repo = repo
         self.client = client
 
-    async def sync_full(self, *, start_page: int | None = None, max_pages: int | None = None) -> SyncSummary:
+    async def sync_full(
+        self,
+        *,
+        start_page: int | None = None,
+        max_pages: int | None = None,
+        progress: SyncProgressReporter | None = None,
+    ) -> SyncSummary:
         summary = SyncSummary()
         target_last_page = self.repo.get_state_int("sync_full_target_last_page", 0)
         last_completed = self.repo.get_state_int("sync_full_last_completed_page", 0)
@@ -40,6 +66,11 @@ class SyncService:
 
         first_listing = await self.client.fetch_listing_page(current_page)
         target_last_page = first_listing.last_page
+        final_page = target_last_page
+        if max_pages is not None:
+            final_page = min(target_last_page, current_page + max_pages - 1)
+        if progress is not None:
+            progress.on_page_plan(mode="full", current_page=current_page, total_pages=final_page)
         with self.repo.transaction():
             self.repo.set_state("sync_full_target_last_page", target_last_page)
         page_queue = [first_listing]
@@ -48,25 +79,50 @@ class SyncService:
             listing = page_queue.pop(0)
             ids_for_details, _ = self._persist_listing(listing, summary)
             summary.pages_checked += 1
-            await self._sync_movie_details(ids_for_details, summary)
+            if progress is not None:
+                progress.on_page_processed(
+                    mode="full",
+                    page=listing.page,
+                    pages_checked=summary.pages_checked,
+                    total_pages=final_page,
+                )
+            await self._sync_movie_details(
+                ids_for_details,
+                summary,
+                progress=progress,
+                batch_label=f"page {listing.page} details",
+            )
             with self.repo.transaction():
                 self.repo.set_state("sync_full_last_completed_page", listing.page)
 
             if max_pages is not None and summary.pages_checked >= max_pages:
                 break
             next_page = listing.page + 1
-            if next_page <= target_last_page:
+            if next_page <= final_page:
                 page_queue.append(await self.client.fetch_listing_page(next_page))
 
         pending_ids = self.repo.get_movies_needing_detail()
-        await self._sync_movie_details(pending_ids, summary)
+        await self._sync_movie_details(
+            pending_ids,
+            summary,
+            progress=progress,
+            batch_label="pending details",
+        )
         return summary
 
-    async def sync_latest(self, *, stable_page_limit: int = 3, max_pages: int | None = None) -> SyncSummary:
+    async def sync_latest(
+        self,
+        *,
+        stable_page_limit: int = 3,
+        max_pages: int | None = None,
+        progress: SyncProgressReporter | None = None,
+    ) -> SyncSummary:
         summary = SyncSummary()
         stable_pages = 0
         page = 1
         detail_candidates: list[int] = []
+        if progress is not None:
+            progress.on_page_plan(mode="latest", current_page=page, total_pages=max_pages)
 
         while stable_pages < stable_page_limit:
             listing = await self.client.fetch_listing_page(page)
@@ -79,6 +135,16 @@ class SyncService:
             else:
                 stable_pages += 1
 
+            if progress is not None:
+                progress.on_page_processed(
+                    mode="latest",
+                    page=page,
+                    pages_checked=summary.pages_checked,
+                    total_pages=max_pages,
+                    stable_pages=stable_pages,
+                    stable_page_limit=stable_page_limit,
+                )
+
             with self.repo.transaction():
                 self.repo.set_state("sync_latest_last_checked_page", page)
 
@@ -90,7 +156,12 @@ class SyncService:
 
         extra_failed = self.repo.get_failed_movie_ids()
         merged = list(dict.fromkeys([*detail_candidates, *extra_failed]))
-        await self._sync_movie_details(merged, summary)
+        await self._sync_movie_details(
+            merged,
+            summary,
+            progress=progress,
+            batch_label="latest detail sync",
+        )
         return summary
 
     def _persist_listing(self, listing, summary: SyncSummary) -> tuple[list[int], bool]:
@@ -110,10 +181,28 @@ class SyncService:
                     detail_ids.append(item.source_site_id)
         return detail_ids, page_changed
 
-    async def _sync_movie_details(self, source_ids: list[int], summary: SyncSummary) -> None:
+    async def _sync_movie_details(
+        self,
+        source_ids: list[int],
+        summary: SyncSummary,
+        *,
+        progress: SyncProgressReporter | None = None,
+        batch_label: str,
+    ) -> None:
         unique_ids = list(dict.fromkeys(source_ids))
+        total_items = len(unique_ids)
+        if progress is not None:
+            progress.on_detail_batch_start(label=batch_label, total_items=total_items)
+        processed_items = 0
         for batch in chunked(unique_ids, 12):
             await asyncio.gather(*(self._sync_one_movie_detail(source_id, summary) for source_id in batch))
+            processed_items += len(batch)
+            if progress is not None:
+                progress.on_detail_item_done(
+                    label=batch_label,
+                    processed_items=processed_items,
+                    total_items=total_items,
+                )
 
     async def _sync_one_movie_detail(self, source_site_id: int, summary: SyncSummary) -> None:
         url = f"https://oreno3d.com/movies/{source_site_id}"

@@ -5,17 +5,102 @@ from pathlib import Path
 
 import typer
 import uvicorn
+from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from .config import get_settings
 from .crawler import Oreno3dClient
 from .db import Repository
-from .services import SyncService
+from .services import SyncProgressReporter, SyncService
 from .web import create_app
 
 
 app = typer.Typer(help="Local Oreno3D search mirror.")
 sync_app = typer.Typer(help="Metadata sync commands.")
 app.add_typer(sync_app, name="sync")
+console = Console()
+
+
+class RichSyncProgressReporter(SyncProgressReporter):
+    def __init__(self) -> None:
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(bar_width=None),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            transient=False,
+        )
+        self.page_task: TaskID | None = None
+        self.detail_task: TaskID | None = None
+
+    def __enter__(self) -> "RichSyncProgressReporter":
+        self.progress.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.progress.stop()
+
+    def on_page_plan(self, *, mode: str, current_page: int, total_pages: int | None) -> None:
+        description = (
+            f"[cyan]Sync full[/cyan] pages from {current_page}"
+            if mode == "full"
+            else "[cyan]Sync latest[/cyan] scanning pages"
+        )
+        if self.page_task is not None:
+            self.progress.remove_task(self.page_task)
+        initial_completed = current_page - 1 if mode == "full" and total_pages and current_page > 1 else 0
+        self.page_task = self.progress.add_task(
+            description,
+            total=total_pages if total_pages and total_pages > 0 else None,
+            completed=initial_completed,
+        )
+
+    def on_page_processed(
+        self,
+        *,
+        mode: str,
+        page: int,
+        pages_checked: int,
+        total_pages: int | None,
+        stable_pages: int | None = None,
+        stable_page_limit: int | None = None,
+    ) -> None:
+        if self.page_task is None:
+            self.on_page_plan(mode=mode, current_page=page, total_pages=total_pages)
+        description = f"[cyan]{mode}[/cyan] page {page}"
+        if mode == "full" and total_pages:
+            description += f"/{total_pages}"
+        if mode == "latest" and stable_pages is not None and stable_page_limit is not None:
+            description += f"  stable {stable_pages}/{stable_page_limit}"
+        self.progress.update(
+            self.page_task,
+            description=description,
+            completed=page if mode == "full" and total_pages else pages_checked,
+            total=total_pages if total_pages and total_pages > 0 else None,
+        )
+
+    def on_detail_batch_start(self, *, label: str, total_items: int) -> None:
+        if self.detail_task is not None:
+            self.progress.remove_task(self.detail_task)
+        total = total_items if total_items > 0 else 1
+        description = f"[magenta]{label}[/magenta]"
+        self.detail_task = self.progress.add_task(description, total=total)
+        if total_items == 0:
+            self.progress.update(self.detail_task, completed=1, description=f"[magenta]{label}[/magenta] none")
+
+    def on_detail_item_done(self, *, label: str, processed_items: int, total_items: int) -> None:
+        if self.detail_task is None:
+            return
+        total = total_items if total_items > 0 else 1
+        self.progress.update(
+            self.detail_task,
+            description=f"[magenta]{label}[/magenta]",
+            completed=processed_items if total_items > 0 else 1,
+            total=total,
+        )
 
 
 def _echo_summary(name: str, summary) -> None:
@@ -41,7 +126,12 @@ def sync_full(
         repo = Repository.open(db_path)
         async with Oreno3dClient(get_settings(db_path)) as client:
             service = SyncService(repo, client)
-            summary = await service.sync_full(start_page=start_page, max_pages=max_pages)
+            with RichSyncProgressReporter() as reporter:
+                summary = await service.sync_full(
+                    start_page=start_page,
+                    max_pages=max_pages,
+                    progress=reporter,
+                )
             _echo_summary("sync full", summary)
         repo.close()
 
@@ -60,7 +150,12 @@ def sync_latest(
         repo = Repository.open(db_path)
         async with Oreno3dClient(get_settings(db_path)) as client:
             service = SyncService(repo, client)
-            summary = await service.sync_latest(stable_page_limit=stable_pages, max_pages=max_pages)
+            with RichSyncProgressReporter() as reporter:
+                summary = await service.sync_latest(
+                    stable_page_limit=stable_pages,
+                    max_pages=max_pages,
+                    progress=reporter,
+                )
             _echo_summary("sync latest", summary)
         repo.close()
 
