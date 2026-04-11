@@ -109,6 +109,14 @@ class RichSyncProgressReporter(SyncProgressReporter):
             completed=processed_items,
             total=batch.total_items,
         )
+        if self.page_task is not None and batch.mode == "full" and batch.batch_pages > 0:
+            fraction = processed_items / batch.total_items
+            completed_pages = batch.pages_completed_before_batch + (batch.batch_pages * fraction)
+            self.progress.update(
+                self.page_task,
+                completed=completed_pages,
+                total=batch.total_pages if batch.total_pages and batch.total_pages > 0 else None,
+            )
 
 
 def _echo_summary(name: str, summary) -> None:
