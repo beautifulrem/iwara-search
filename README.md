@@ -13,7 +13,7 @@ Crawls video metadata (title, author, tags, origins, characters, view/favorite c
 - **Range filters** — published date, view count, favorite count
 - **Four sort modes** matching the original site: Trending / Top Rated / Latest / Popular
 - **Related videos** on detail pages (weighted by shared author, characters, origins, tags)
-- **Light/Dark theme** with system preference detection and manual toggle
+- **Three-state theme** — light / dark / follow system, with follow-system as default
 - **Popularity rankings** — sidebar with top characters, authors, and categories
 - **Entity browsing** — ranked lists for `/characters`, `/authors`, `/tags`, `/origins` with author video carousels
 - **Incremental & full sync** — resumable crawling with retry on failures

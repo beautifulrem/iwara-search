@@ -6,18 +6,25 @@
   <title>{% block title %}{{ tr("brand") }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=dark_mode,emoji_events,favorite,fiber_new,light_mode,menu,remove_red_eye,trending_up,tune" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=brightness_auto,dark_mode,emoji_events,favorite,fiber_new,light_mode,menu,remove_red_eye,trending_up,tune" rel="stylesheet">
   <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}?v={{ static_version }}">
   <script>
     (function(){
       var t = localStorage.getItem('theme');
       if (t === 'dark' || t === 'light') {
         document.documentElement.setAttribute('data-theme', t);
+      } else {
+        document.documentElement.removeAttribute('data-theme');
       }
     })();
   </script>
 </head>
-<body data-delete-label="{{ tr('common.delete') }}">
+<body
+  data-delete-label="{{ tr('common.delete') }}"
+  data-theme-system-label="{{ tr('theme.system') }}"
+  data-theme-dark-label="{{ tr('theme.dark') }}"
+  data-theme-light-label="{{ tr('theme.light') }}"
+>
   <header class="site-header">
     <div class="site-header__inner">
       <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="{{ tr('header.toggle_menu') }}">
@@ -35,8 +42,8 @@
         <a href="/origins">{{ tr('header.nav.origins') }}</a>
       </nav>
       <a class="locale-toggle" href="{{ switch_lang_href }}" aria-label="{{ tr('header.toggle_lang') }}">{{ switch_lang_label }}</a>
-      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="{{ tr('header.toggle_theme') }}">
-        <span class="material-symbols-outlined">dark_mode</span>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="{{ tr('header.toggle_theme') }}" title="{{ tr('header.toggle_theme') }}">
+        <span class="material-symbols-outlined">brightness_auto</span>
       </button>
     </div>
   </header>

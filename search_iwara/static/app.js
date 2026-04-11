@@ -2,27 +2,68 @@
 (function initTheme() {
   var toggle = document.getElementById("theme-toggle");
   if (!toggle) return;
+  var root = document.documentElement;
+  var labels = {
+    system: document.body && document.body.dataset.themeSystemLabel ? document.body.dataset.themeSystemLabel : "System",
+    dark: document.body && document.body.dataset.themeDarkLabel ? document.body.dataset.themeDarkLabel : "Dark",
+    light: document.body && document.body.dataset.themeLightLabel ? document.body.dataset.themeLightLabel : "Light"
+  };
+  var iconMap = {
+    system: "brightness_auto",
+    dark: "dark_mode",
+    light: "light_mode"
+  };
 
-  function getEffective() {
+  function getStoredTheme() {
     var stored = localStorage.getItem("theme");
-    if (stored === "dark" || stored === "light") return stored;
+    if (stored === "dark" || stored === "light" || stored === "system") return stored;
+    return "system";
+  }
+
+  function getEffectiveTheme(mode) {
+    if (mode === "dark" || mode === "light") return mode;
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
 
-  function applyIcon(theme) {
+  function applyTheme(mode) {
+    var effective = getEffectiveTheme(mode);
+    if (mode === "system") {
+      root.removeAttribute("data-theme");
+    } else {
+      root.setAttribute("data-theme", effective);
+    }
     var icon = toggle.querySelector(".material-symbols-outlined");
-    if (icon) icon.textContent = theme === "dark" ? "light_mode" : "dark_mode";
+    if (icon) icon.textContent = iconMap[mode] || "brightness_auto";
+    var label = labels[mode] || labels.system;
+    toggle.setAttribute("aria-label", label);
+    toggle.setAttribute("title", label);
   }
 
-  applyIcon(getEffective());
+  function nextTheme(mode) {
+    if (mode === "system") return "dark";
+    if (mode === "dark") return "light";
+    return "system";
+  }
+
+  var media = window.matchMedia("(prefers-color-scheme: dark)");
+  function syncSystemTheme() {
+    var mode = getStoredTheme();
+    if (mode === "system") applyTheme("system");
+  }
+
+  applyTheme(getStoredTheme());
 
   toggle.addEventListener("click", function () {
-    var current = getEffective();
-    var next = current === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
+    var next = nextTheme(getStoredTheme());
     localStorage.setItem("theme", next);
-    applyIcon(next);
+    applyTheme(next);
   });
+
+  if (typeof media.addEventListener === "function") {
+    media.addEventListener("change", syncSystemTheme);
+  } else if (typeof media.addListener === "function") {
+    media.addListener(syncSystemTheme);
+  }
 })();
 
 /* ===== Sidebar toggle ===== */
