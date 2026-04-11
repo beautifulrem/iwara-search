@@ -16,8 +16,10 @@ class Settings:
     page_size: int = 36
     request_timeout_seconds: float = 30.0
     request_retries: int = 3
-    request_concurrency: int = 4
-    request_delay_seconds: float = 0.35
+    request_concurrency: int = 12
+    request_delay_seconds: float = 0.05
+    listing_prefetch_pages: int = 8
+    detail_batch_size: int = 96
     user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -34,4 +36,10 @@ def get_settings(db_path: str | Path | None = None) -> Settings:
     raw_path = db_path or os.getenv("SEARCH_IWARA_DB") or default_db_path()
     path = Path(raw_path).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    return Settings(db_path=path)
+    return Settings(
+        db_path=path,
+        request_concurrency=int(os.getenv("SEARCH_IWARA_REQUEST_CONCURRENCY", "12")),
+        request_delay_seconds=float(os.getenv("SEARCH_IWARA_REQUEST_DELAY_SECONDS", "0.05")),
+        listing_prefetch_pages=int(os.getenv("SEARCH_IWARA_LIST_PREFETCH_PAGES", "8")),
+        detail_batch_size=int(os.getenv("SEARCH_IWARA_DETAIL_BATCH_SIZE", "96")),
+    )

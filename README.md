@@ -17,6 +17,8 @@ Crawls video metadata (title, author, tags, origins, characters, view/favorite c
 - **Popularity rankings** — sidebar with top characters, authors, and categories
 - **Entity browsing** — ranked lists for `/characters`, `/authors`, `/tags`, `/origins` with author video carousels
 - **Incremental & full sync** — resumable crawling with retry on failures
+- **Terminal progress bars** — page progress + detail fetch progress during sync
+- **Tunable concurrency** — request concurrency, prefetch window, and detail batch size are configurable
 - **Responsive design** — mobile sidebar, adaptive grid
 
 ## Tech Stack
@@ -46,6 +48,13 @@ uv run search-iwara sync latest
 
 # Full sync: crawl everything (resumable)
 uv run search-iwara sync full
+
+# Faster full sync (tune based on your network / remote site tolerance)
+uv run search-iwara sync full \
+  --request-concurrency 24 \
+  --request-delay-ms 0 \
+  --list-prefetch-pages 16 \
+  --detail-batch-size 192
 ```
 
 ### Start the web UI
@@ -68,6 +77,48 @@ Open `http://127.0.0.1:8000` (default) in your browser.
 | `/authors` | Author rankings with video carousels |
 | `/tags` | Tag rankings |
 | `/origins` | Origin/franchise rankings |
+
+## Crawl Speed Tuning
+
+The crawler is network-bound. It already uses async concurrency; by default it now runs with:
+
+- `request_concurrency = 12`
+- `request_delay_seconds = 0.05`
+- `listing_prefetch_pages = 8`
+- `detail_batch_size = 96`
+
+You can override these from the CLI:
+
+```bash
+uv run search-iwara sync full \
+  --request-concurrency 24 \
+  --request-delay-ms 0 \
+  --list-prefetch-pages 16 \
+  --detail-batch-size 192
+```
+
+Recommended approach:
+
+- Start with `--request-concurrency 24 --request-delay-ms 0`
+- If the site starts failing or slowing down, lower concurrency to `16`
+- Increase `--list-prefetch-pages` and `--detail-batch-size` only after request concurrency is stable
+
+## Crawl Progress Output
+
+Both sync commands show terminal progress bars:
+
+- **Page progress**
+  - `sync full`: current page / total pages
+  - `sync latest`: current page and stable-page stop state
+- **Detail progress**
+  - number of video detail pages fetched in the current batch
+
+Example:
+
+```text
+full page 53/8823
+pages 49-56 details
+```
 
 ## Search Parameters
 
@@ -148,12 +199,12 @@ uv run search-iwara serve --port 8765
 ```
 search_iwara/
   cli.py          # Typer CLI: sync full, sync latest, serve
-  services.py     # Sync orchestration (full vs incremental, retry)
+  services.py     # Sync orchestration, prefetch, detail batching, progress events
   crawler.py      # Async HTTP to oreno3d.com (rate limiting, retries)
   parsers.py      # HTML -> structured fields via selectolax
   db.py           # SQLite schema, upserts, FTS5 search, rankings
   models.py       # Dataclass models
-  config.py       # Settings (SEARCH_IWARA_DB env var)
+  config.py       # Settings (DB path, concurrency, delay, batch sizes)
   web.py          # FastAPI routes
   utils.py        # URL parsing, formatting, pagination helpers
   static/

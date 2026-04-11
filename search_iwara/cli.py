@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 
 import typer
@@ -114,17 +115,48 @@ def _echo_summary(name: str, summary) -> None:
     )
 
 
+def _build_settings(
+    db_path: Path | None,
+    *,
+    request_concurrency: int | None,
+    request_delay_ms: int | None,
+    list_prefetch_pages: int | None,
+    detail_batch_size: int | None,
+):
+    settings = get_settings(db_path)
+    return replace(
+        settings,
+        request_concurrency=request_concurrency or settings.request_concurrency,
+        request_delay_seconds=(
+            settings.request_delay_seconds if request_delay_ms is None else max(request_delay_ms, 0) / 1000.0
+        ),
+        listing_prefetch_pages=list_prefetch_pages or settings.listing_prefetch_pages,
+        detail_batch_size=detail_batch_size or settings.detail_batch_size,
+    )
+
+
 @sync_app.command("full")
 def sync_full(
     db_path: Path | None = typer.Option(None, help="SQLite database path."),
     start_page: int | None = typer.Option(None, min=1, help="Override resume page."),
     max_pages: int | None = typer.Option(None, min=1, help="Limit pages for a partial run."),
+    request_concurrency: int | None = typer.Option(None, min=1, help="Concurrent HTTP requests."),
+    request_delay_ms: int | None = typer.Option(None, min=0, help="Delay between requests in milliseconds."),
+    list_prefetch_pages: int | None = typer.Option(None, min=1, help="How many listing pages to prefetch per batch."),
+    detail_batch_size: int | None = typer.Option(None, min=1, help="How many detail tasks to schedule per batch."),
 ) -> None:
     """Run a resumable full sync from the latest listing pages."""
 
     async def runner() -> None:
+        settings = _build_settings(
+            db_path,
+            request_concurrency=request_concurrency,
+            request_delay_ms=request_delay_ms,
+            list_prefetch_pages=list_prefetch_pages,
+            detail_batch_size=detail_batch_size,
+        )
         repo = Repository.open(db_path)
-        async with Oreno3dClient(get_settings(db_path)) as client:
+        async with Oreno3dClient(settings) as client:
             service = SyncService(repo, client)
             with RichSyncProgressReporter() as reporter:
                 summary = await service.sync_full(
@@ -143,12 +175,23 @@ def sync_latest(
     db_path: Path | None = typer.Option(None, help="SQLite database path."),
     stable_pages: int = typer.Option(3, min=1, help="Stop after this many stable pages."),
     max_pages: int | None = typer.Option(None, min=1, help="Limit pages for a partial run."),
+    request_concurrency: int | None = typer.Option(None, min=1, help="Concurrent HTTP requests."),
+    request_delay_ms: int | None = typer.Option(None, min=0, help="Delay between requests in milliseconds."),
+    list_prefetch_pages: int | None = typer.Option(None, min=1, help="Reserved for future list prefetch tuning."),
+    detail_batch_size: int | None = typer.Option(None, min=1, help="How many detail tasks to schedule per batch."),
 ) -> None:
     """Fetch only the newest pages until results stabilize."""
 
     async def runner() -> None:
+        settings = _build_settings(
+            db_path,
+            request_concurrency=request_concurrency,
+            request_delay_ms=request_delay_ms,
+            list_prefetch_pages=list_prefetch_pages,
+            detail_batch_size=detail_batch_size,
+        )
         repo = Repository.open(db_path)
-        async with Oreno3dClient(get_settings(db_path)) as client:
+        async with Oreno3dClient(settings) as client:
             service = SyncService(repo, client)
             with RichSyncProgressReporter() as reporter:
                 summary = await service.sync_latest(
