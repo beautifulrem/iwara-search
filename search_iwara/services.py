@@ -21,6 +21,17 @@ class SyncSummary:
     failed_details: int = 0
 
 
+@dataclass(slots=True)
+class DetailBatchProgress:
+    mode: str
+    label: str
+    total_items: int
+    batch_pages: int
+    pages_completed_before_batch: int
+    total_pages: int | None
+    current_page: int
+
+
 class SyncProgressReporter(Protocol):
     def on_page_plan(self, *, mode: str, current_page: int, total_pages: int | None) -> None: ...
 
@@ -35,9 +46,9 @@ class SyncProgressReporter(Protocol):
         stable_page_limit: int | None = None,
     ) -> None: ...
 
-    def on_detail_batch_start(self, *, label: str, total_items: int) -> None: ...
+    def on_detail_batch_start(self, *, batch: DetailBatchProgress) -> None: ...
 
-    def on_detail_item_done(self, *, label: str, processed_items: int, total_items: int) -> None: ...
+    def on_detail_item_done(self, *, batch: DetailBatchProgress, processed_items: int) -> None: ...
 
 
 class SyncService:
@@ -96,17 +107,12 @@ class SyncService:
             listings.sort(key=lambda listing: listing.page)
 
             detail_ids_for_batch: list[int] = []
+            last_processed_page: int | None = None
             for listing in listings:
                 ids_for_details, _ = self._persist_listing(listing, summary)
                 detail_ids_for_batch.extend(ids_for_details)
                 summary.pages_checked += 1
-                if progress is not None:
-                    progress.on_page_processed(
-                        mode="full",
-                        page=listing.page,
-                        pages_checked=summary.pages_checked,
-                        total_pages=final_page,
-                    )
+                last_processed_page = listing.page
                 with self.repo.transaction():
                     self.repo.set_state("sync_full_last_completed_page", listing.page)
 
@@ -118,23 +124,48 @@ class SyncService:
                 if listings
                 else "page details"
             )
+            batch_progress = DetailBatchProgress(
+                mode="full",
+                label=label,
+                total_items=len(detail_ids_for_batch),
+                batch_pages=len(listings),
+                pages_completed_before_batch=summary.pages_checked - len(listings),
+                total_pages=final_page,
+                current_page=last_processed_page or next_page,
+            )
             await self._sync_movie_details(
                 detail_ids_for_batch,
                 summary,
                 progress=progress,
-                batch_label=label,
+                batch=batch_progress,
             )
+            if progress is not None and last_processed_page is not None:
+                progress.on_page_processed(
+                    mode="full",
+                    page=last_processed_page,
+                    pages_checked=summary.pages_checked,
+                    total_pages=final_page,
+                )
 
             if max_pages is not None and summary.pages_checked >= max_pages:
                 break
             next_page = batch_end + 1
 
         pending_ids = self.repo.get_movies_needing_detail()
+        pending_batch = DetailBatchProgress(
+            mode="full",
+            label="pending details",
+            total_items=len(pending_ids),
+            batch_pages=0,
+            pages_completed_before_batch=summary.pages_checked,
+            total_pages=final_page,
+            current_page=summary.pages_checked if summary.pages_checked > 0 else current_page,
+        )
         await self._sync_movie_details(
             pending_ids,
             summary,
             progress=progress,
-            batch_label="pending details",
+            batch=pending_batch,
         )
         return summary
 
@@ -184,11 +215,20 @@ class SyncService:
 
         extra_failed = self.repo.get_failed_movie_ids()
         merged = list(dict.fromkeys([*detail_candidates, *extra_failed]))
+        batch_progress = DetailBatchProgress(
+            mode="latest",
+            label="latest detail sync",
+            total_items=len(merged),
+            batch_pages=0,
+            pages_completed_before_batch=summary.pages_checked,
+            total_pages=max_pages,
+            current_page=page,
+        )
         await self._sync_movie_details(
             merged,
             summary,
             progress=progress,
-            batch_label="latest detail sync",
+            batch=batch_progress,
         )
         return summary
 
@@ -215,23 +255,22 @@ class SyncService:
         summary: SyncSummary,
         *,
         progress: SyncProgressReporter | None = None,
-        batch_label: str,
+        batch: DetailBatchProgress,
     ) -> None:
         unique_ids = list(dict.fromkeys(source_ids))
         total_items = len(unique_ids)
         if progress is not None:
-            progress.on_detail_batch_start(label=batch_label, total_items=total_items)
+            progress.on_detail_batch_start(batch=batch)
         processed_items = 0
-        for batch in chunked(unique_ids, self.client.settings.detail_batch_size):
-            tasks = [asyncio.create_task(self._sync_one_movie_detail(source_id, summary)) for source_id in batch]
+        for detail_group in chunked(unique_ids, self.client.settings.detail_batch_size):
+            tasks = [asyncio.create_task(self._sync_one_movie_detail(source_id, summary)) for source_id in detail_group]
             for task in asyncio.as_completed(tasks):
                 await task
                 processed_items += 1
                 if progress is not None:
                     progress.on_detail_item_done(
-                        label=batch_label,
+                        batch=batch,
                         processed_items=processed_items,
-                        total_items=total_items,
                     )
 
     async def _sync_one_movie_detail(self, source_site_id: int, summary: SyncSummary) -> None:

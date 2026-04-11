@@ -12,7 +12,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn
 from .config import get_settings
 from .crawler import Oreno3dClient
 from .db import Repository
-from .services import SyncProgressReporter, SyncService
+from .services import DetailBatchProgress, SyncProgressReporter, SyncService
 from .web import create_app
 
 
@@ -83,24 +83,31 @@ class RichSyncProgressReporter(SyncProgressReporter):
             total=total_pages if total_pages and total_pages > 0 else None,
         )
 
-    def on_detail_batch_start(self, *, label: str, total_items: int) -> None:
+    def on_detail_batch_start(self, *, batch: DetailBatchProgress) -> None:
         if self.detail_task is not None:
             self.progress.remove_task(self.detail_task)
-        total = total_items if total_items > 0 else 1
-        description = f"[magenta]{label}[/magenta]"
-        self.detail_task = self.progress.add_task(description, total=total)
-        if total_items == 0:
-            self.progress.update(self.detail_task, completed=1, description=f"[magenta]{label}[/magenta] none")
-
-    def on_detail_item_done(self, *, label: str, processed_items: int, total_items: int) -> None:
-        if self.detail_task is None:
+            self.detail_task = None
+        if batch.batch_pages == 0 and batch.total_items == 0:
             return
-        total = total_items if total_items > 0 else 1
+        label = "details" if batch.mode == "full" else batch.label
+        total = batch.total_items if batch.total_items > 0 else 1
+        self.detail_task = self.progress.add_task(
+            f"[magenta]{label}[/magenta]",
+            total=total,
+            completed=0 if batch.total_items > 0 else 1,
+        )
+        if batch.total_items == 0:
+            self.progress.update(self.detail_task, description=f"[magenta]{label} none[/magenta]", completed=1, total=1)
+
+    def on_detail_item_done(self, *, batch: DetailBatchProgress, processed_items: int) -> None:
+        if batch.total_items <= 0 or self.detail_task is None:
+            return
+        label = "details" if batch.mode == "full" else batch.label
         self.progress.update(
             self.detail_task,
             description=f"[magenta]{label}[/magenta]",
-            completed=processed_items if total_items > 0 else 1,
-            total=total,
+            completed=processed_items,
+            total=batch.total_items,
         )
 
 
