@@ -1,4 +1,6 @@
-from search_iwara.parsers import parse_listing_page, parse_movie_detail
+import pytest
+
+from search_iwara.parsers import DetailUnavailableError, parse_listing_page, parse_movie_detail
 
 
 LISTING_HTML = """
@@ -112,6 +114,41 @@ DETAIL_HTML_NO_TAGS = """
 """
 
 
+DETAIL_HTML_PLACEHOLDER = """
+<html>
+  <head>
+    <title>｜俺の3Dエロ動画</title>
+  </head>
+  <body>
+    <h1 class="video-h1"></h1>
+    <ul class="video-views">
+      <li class="f-label-in">
+        <i class="material-icons">calendar_month</i>
+        <div class="video-text">-0001-11-30</div>
+        <div class="video-text">00:00</div>
+      </li>
+      <li class="f-label-in">
+        <i class="material-icons">remove_red_eye</i>
+        <div class="video-text">0</div>
+        <div class="video-text">回視聴</div>
+      </li>
+      <li class="f-label-in">
+        <i class="material-icons">favorite</i>
+        <div class="video-text">0</div>
+        <div class="video-text">いいね</div>
+      </li>
+    </ul>
+    <section class="video-section-tag">
+      <a href="https://oreno3d.com/authors/10" class="video-information">
+        <div class="video-center">Creator A</div>
+      </a>
+    </section>
+    <a href="https://www.iwara.tv/video/example" class="video-watch-btn2">watch</a>
+  </body>
+</html>
+"""
+
+
 def test_parse_listing_page_extracts_movies_and_last_page():
     page = parse_listing_page(LISTING_HTML, page=2)
 
@@ -156,3 +193,12 @@ def test_parse_movie_detail_without_tags_or_comment():
     assert detail.characters == []
     assert detail.author_comment is None
     assert detail.external_video_url == "https://www.iwara.tv/video/example-2"
+
+
+def test_parse_movie_detail_placeholder_page_raises_unavailable():
+    with pytest.raises(DetailUnavailableError):
+        parse_movie_detail(
+            DETAIL_HTML_PLACEHOLDER,
+            source_site_id=103,
+            oreno3d_url="https://oreno3d.com/movies/103",
+        )

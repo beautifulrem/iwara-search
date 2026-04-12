@@ -67,6 +67,47 @@ uv run search-iwara serve --port 8765
 
 Open `http://127.0.0.1:8000` (default) in your browser.
 
+## Linux Deployment
+
+This repo includes Linux deployment assets for:
+
+- `systemd` web service
+- `systemd` timer for `sync latest`
+- `nginx` reverse proxy to an existing domain
+
+Files live in [`deploy/linux`](/path/to/repo/deploy/linux), with a full walkthrough in [docs/linux-deploy.md](/path/to/repo/docs/linux-deploy.md).
+
+If you want an interactive setup and maintenance flow instead of hand-editing files:
+
+```bash
+sudo ./deploy/linux/manage.py
+```
+
+The manager script can detect install state, guide first-time setup, update sync defaults, run manual syncs, and manage nginx mode/domain/TLS paths.
+
+Typical install on a Linux server:
+
+```bash
+sudo ./deploy/linux/install.sh \
+  --sync-hours 6
+```
+
+This installs:
+
+- `search-iwara-web.service`
+- `search-iwara-sync.service`
+- `search-iwara-sync.timer`
+- a generic nginx site config you can adapt to your domain
+
+If you only want to bind the app directly on a public port and skip nginx:
+
+```bash
+sudo ./deploy/linux/install.sh \
+  --skip-nginx \
+  --web-host 0.0.0.0 \
+  --web-port 8000
+```
+
 ## Pages
 
 | Route | Description |

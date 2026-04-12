@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
-from .crawler import Oreno3dClient, RemoteNotFoundError
+from .crawler import Oreno3dClient, RemoteNotFoundError, RemoteUnavailableError
 from .db import Repository
 from .models import ListUpsertResult
 from .utils import chunked
@@ -282,7 +282,7 @@ class SyncService:
                 self.repo.apply_movie_detail(detail)
                 self.repo.clear_error(entity_type="movie", entity_id=str(source_site_id), operation="detail")
             summary.details_fetched += 1
-        except RemoteNotFoundError:
+        except (RemoteNotFoundError, RemoteUnavailableError):
             with self.repo.transaction():
                 self.repo.mark_movie_missing(source_site_id, url)
                 self.repo.clear_error(entity_type="movie", entity_id=str(source_site_id), operation="detail")

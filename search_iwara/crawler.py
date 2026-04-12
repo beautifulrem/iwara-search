@@ -7,11 +7,15 @@ import httpx
 
 from .config import Settings, get_settings
 from .models import ListingPage, MovieDetail
-from .parsers import parse_listing_page, parse_movie_detail
+from .parsers import DetailUnavailableError, parse_listing_page, parse_movie_detail
 from .utils import BASE_URL
 
 
 class RemoteNotFoundError(Exception):
+    pass
+
+
+class RemoteUnavailableError(Exception):
     pass
 
 
@@ -70,4 +74,7 @@ class Oreno3dClient:
     async def fetch_movie_detail(self, source_site_id: int) -> MovieDetail:
         url = f"{BASE_URL}/movies/{source_site_id}"
         response = await self._get(url)
-        return parse_movie_detail(response.text, source_site_id=source_site_id, oreno3d_url=url)
+        try:
+            return parse_movie_detail(response.text, source_site_id=source_site_id, oreno3d_url=url)
+        except DetailUnavailableError as exc:
+            raise RemoteUnavailableError(url) from exc
