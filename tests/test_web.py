@@ -96,6 +96,17 @@ def test_web_search_and_detail_routes(tmp_path: Path):
     assert middle_substring.status_code == 200
     assert "【MMD】潜入!射精我慢賭博!~キヴォトスのピンク色の闇を暴け!~" in middle_substring.text
 
+    combined_filters = client.get("/", params={"q": "yelan", "tag_not": "32"})
+    assert combined_filters.status_code == 200
+    assert "sunrise yelan mix" in combined_filters.text
+    assert "sunset yelan dance" in combined_filters.text
+    assert "キヴォトス" not in combined_filters.text
+
+    stateful_form = client.get("/", params={"q": "yelan", "tag_not": "31"})
+    assert stateful_form.status_code == 200
+    assert 'type="hidden" name="q" value="yelan"' in stateful_form.text
+    assert stateful_form.text.count('name="tag_not" value="31"') == 2
+
     detail = client.get("/movies/200")
     assert detail.status_code == 200
     assert "Test comment" in detail.text

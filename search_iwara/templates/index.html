@@ -28,6 +28,12 @@
 
   <div class="filter-panel" id="filter-panel">
     <form method="get" action="/">
+      {% for name in ['q', 'title_mode', 'lang'] %}
+        {% set value = request.query_params.get(name) %}
+        {% if value %}
+          <input type="hidden" name="{{ name }}" value="{{ value }}">
+        {% endif %}
+      {% endfor %}
       <input type="hidden" name="sort" id="sort-hidden" value="{{ filters.sort }}">
       <div class="filter-grid">
         <section class="filter-card">

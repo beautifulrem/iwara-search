@@ -33,6 +33,31 @@
       <a class="site-title" href="/">{{ tr("brand") }}</a>
       <form class="header-search" method="get" action="/">
         <input type="text" name="q" placeholder="{{ tr('header.search_placeholder') }}" value="{{ request.query_params.get('q', '') }}">
+        {% for name in [
+          'title_mode',
+          'author_any',
+          'author_not',
+          'origin_any',
+          'origin_not',
+          'character_any',
+          'character_not',
+          'tag_all',
+          'tag_any',
+          'tag_not',
+          'published_from',
+          'published_to',
+          'min_views',
+          'max_views',
+          'min_favorites',
+          'max_favorites',
+          'sort',
+          'lang',
+        ] %}
+          {% set value = request.query_params.get(name) %}
+          {% if value %}
+            <input type="hidden" name="{{ name }}" value="{{ value }}">
+          {% endif %}
+        {% endfor %}
         <button type="submit">{{ tr('header.search_submit') }}</button>
       </form>
       <nav class="site-nav">
