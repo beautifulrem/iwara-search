@@ -11,6 +11,8 @@ SortMode = Literal[
     "favorites_asc",
     "views_desc",
     "views_asc",
+    "hot_desc",
+    "popularity_desc",
 ]
 TitleMode = Literal["all", "any"]
 
@@ -84,7 +86,7 @@ class SearchFilters:
     max_views: int | None = None
     min_favorites: int | None = None
     max_favorites: int | None = None
-    sort: SortMode = "latest"
+    sort: SortMode = "published_desc"
 
     def to_query_dict(self, *, page: int | None = None) -> dict[str, str]:
         data: dict[str, str] = {}

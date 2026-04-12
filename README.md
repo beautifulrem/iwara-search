@@ -1,11 +1,13 @@
 # Search Iwara
 
+English · [简体中文](./README.zh-CN.md)
+
+**Live demo:** <https://zundamon.dpdns.org/>
+
 ![License: MIT](https://img.shields.io/badge/License-MIT-f2c94c?style=flat-square)
 ![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Backend FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![Database SQLite + FTS5](https://img.shields.io/badge/Database-SQLite%20%2B%20FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)
-![Search Local-first](https://img.shields.io/badge/Search-Local--first-5C6BC0?style=flat-square)
-![Deploy Linux + nginx](https://img.shields.io/badge/Deploy-Linux%20%2B%20nginx-4CAF50?style=flat-square&logo=nginx&logoColor=white)
 
 Local-first metadata mirror of [Oreno3D](https://oreno3d.com/) with advanced search and filtering capabilities.
 
@@ -82,7 +84,7 @@ This repo includes Linux deployment assets for:
 - `systemd` timer for `sync latest`
 - `nginx` reverse proxy to an existing domain
 
-Files live in [`deploy/linux`](/path/to/repo/deploy/linux), with a full walkthrough in [docs/linux-deploy.md](/path/to/repo/docs/linux-deploy.md).
+Files live in [`deploy/linux`](./deploy/linux), with a full walkthrough in [docs/linux-deploy.md](./docs/linux-deploy.md).
 
 If you want an interactive setup and maintenance flow instead of hand-editing files:
 
@@ -276,4 +278,4 @@ tests/
 
 This project is licensed under the MIT License.
 
-See [LICENSE](/path/to/repo/LICENSE).
+See [LICENSE](./LICENSE).

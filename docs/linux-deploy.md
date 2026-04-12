@@ -6,7 +6,7 @@ This project now includes Linux deployment assets for:
 - running `sync latest` on a repeating timer
 - exposing the app through `nginx` on an existing domain
 
-The deployment assets live in [`deploy/linux`](/path/to/repo/deploy/linux).
+The deployment assets live in [`deploy/linux`](../deploy/linux).
 
 For an interactive setup and maintenance flow, use:
 

@@ -53,7 +53,7 @@ class Oreno3dClient:
                     response = await self._client.get(url)
                     if response.status_code == 404:
                         raise RemoteNotFoundError(url)
-                    if response.status_code >= 500 or response.status_code == 429:
+                    if response.status_code >= 400:
                         response.raise_for_status()
                     await asyncio.sleep(self.settings.request_delay_seconds)
                     return FetchResponse(url=str(response.url), status_code=response.status_code, text=response.text)

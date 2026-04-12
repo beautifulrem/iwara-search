@@ -98,15 +98,14 @@ def parse_listing_page(html: str, *, page: int) -> ListingPage:
             continue
         stats = [clean_text(node.text()) for node in article.css(".figure-text-in")]
         author_name = _text(article.css_first(".box-text1 .box-text-in")) or None
+        thumbnail_node = article.css_first("img.main-thumbnail")
         item = MovieListItem(
             source_site_id=extract_movie_id(href),
             oreno3d_url=href,
             title=_text(article.css_first("h2.box-h2")),
             author_name=author_name,
             thumbnail_url=absolute_url(
-                article.css_first("img.main-thumbnail").attributes.get("src")
-                if article.css_first("img.main-thumbnail")
-                else None
+                thumbnail_node.attributes.get("src") if thumbnail_node else None
             ),
             view_count=parse_compact_number(stats[0]) if len(stats) >= 1 else None,
             favorite_count=parse_compact_number(stats[1]) if len(stats) >= 2 else None,

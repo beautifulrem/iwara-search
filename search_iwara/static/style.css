@@ -207,11 +207,12 @@ textarea {
 
 .header-search {
   flex: 1;
+  min-width: 0;
   max-width: 480px;
   display: flex;
 }
 
-.header-search input {
+.header-search input[type="text"] {
   width: 100%;
   height: 34px;
   padding: 0 12px;
@@ -220,10 +221,11 @@ textarea {
   background: var(--input-bg);
   color: var(--text);
   font: inherit;
+  font-size: inherit;
   outline: none;
 }
 
-.header-search input:focus {
+.header-search input[type="text"]:focus {
   border-color: var(--accent);
 }
 
@@ -1028,12 +1030,71 @@ input:focus, select:focus {
   .author-carousel { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* Tablet / narrow viewports: header wraps so search gets a full row */
+@media (max-width: 760px) {
+  .site-header { padding: 0 12px; }
+
+  .site-header__inner {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    height: auto;
+    padding: 10px 0;
+  }
+
+  .header-search {
+    order: 10;
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .header-search input[type="text"],
+  .header-search button { height: 40px; }
+
+  .header-search button { padding: 0 16px; }
+
+  .site-title { font-size: 1rem; }
+}
+
 @media (max-width: 600px) {
   .video-grid { grid-template-columns: 1fr; }
   .filter-grid { grid-template-columns: 1fr; }
   .metrics-grid { grid-template-columns: 1fr; }
   .site-nav { display: none; }
-  .header-search { max-width: none; }
   .author-carousel { grid-template-columns: repeat(2, 1fr); }
   .detail-title { font-size: 1.15rem; }
+
+  .main-content { padding: 12px 12px 28px; }
+
+  /* Let horizontal scroll rescue the sort tabs instead of overflowing the page */
+  .sort-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-left: -12px;
+    margin-right: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .sort-bar::-webkit-scrollbar { display: none; }
+  .sort-tab { flex-shrink: 0; padding: 8px 10px; }
+  .sort-bar__spacer { display: none; }
+
+  /* Pin filter button to the right edge so it stays reachable while
+     the sort tabs scroll horizontally behind it. */
+  .filter-toggle-btn {
+    flex-shrink: 0;
+    margin-left: auto;
+    position: sticky;
+    right: 0;
+    background: var(--bg);
+    box-shadow: -12px 0 12px -8px var(--bg);
+  }
+
+  /* Bigger touch targets for the key interactive controls */
+  .btn { height: 40px; }
+  .pagination__item,
+  .pagination__ellipsis { height: 36px; min-width: 36px; padding: 0 10px; }
+
+  /* Detail page: full-width action buttons look tidier on narrow screens */
+  .detail-actions .btn { flex: 1 1 140px; }
 }

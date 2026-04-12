@@ -16,12 +16,15 @@ from .utils import pagination_window, parse_csv_ids, parse_optional_int, update_
 
 
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_ROOT / "templates"))
-STATIC_VERSION = str(
-    max(
-        int((PACKAGE_ROOT / "static" / "app.js").stat().st_mtime),
-        int((PACKAGE_ROOT / "static" / "style.css").stat().st_mtime),
+
+
+def _current_static_version() -> str:
+    return str(
+        max(
+            int((PACKAGE_ROOT / "static" / "app.js").stat().st_mtime),
+            int((PACKAGE_ROOT / "static" / "style.css").stat().st_mtime),
+        )
     )
-)
 
 SORT_ALIASES = {
     "hot": "hot_desc",
@@ -148,7 +151,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             "tr": tr,
             "switch_lang_href": switch_lang_href,
             "switch_lang_label": tr("header.switch_lang"),
-            "static_version": STATIC_VERSION,
+            "static_version": _current_static_version(),
         }
 
     def render_page(
@@ -361,10 +364,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         offset = (page - 1) * per_page
         if path == "categories":
             items = repo.list_category_rankings(limit=per_page, offset=offset)
-            total = len(repo.list_category_rankings(limit=10_000, offset=0))
+            total = repo.count_category_rankings()
         else:
             items = repo.list_entity_rankings(path, limit=per_page, offset=offset)
-            total = len(repo.list_entity_rankings(path, limit=10_000, offset=0))
+            total = repo.count_entity_rankings(path)
         page_count = max(1, (total + per_page - 1) // per_page)
 
         author_movies: dict[int, list[dict[str, Any]]] = {}

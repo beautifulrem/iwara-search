@@ -1023,28 +1023,41 @@ class Repository:
     def get_author_top_movies(self, author_source_ids: list[int], *, per_author: int = 6) -> dict[int, list[dict[str, Any]]]:
         if not author_source_ids:
             return {}
-        result: dict[int, list[dict[str, Any]]] = {}
-        for author_sid in author_source_ids:
-            rows = self.conn.execute(
-                f"""
-                SELECT m.source_site_id, m.title, m.thumbnail_url, m.view_count, m.favorite_count,
-                       COALESCE(a.name, m.author_display_name, 'Unknown') AS author_name
+        placeholders = ", ".join("?" for _ in author_source_ids)
+        rows = self.conn.execute(
+            f"""
+            WITH ranked AS (
+                SELECT
+                    m.source_site_id,
+                    m.title,
+                    m.thumbnail_url,
+                    m.view_count,
+                    m.favorite_count,
+                    COALESCE(a.name, m.author_display_name, 'Unknown') AS author_name,
+                    a.source_site_id AS author_sid,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY a.source_site_id
+                        ORDER BY {POPULARITY_SCORE_SQL} DESC, m.source_site_id DESC
+                    ) AS rn
                 FROM movies m
                 JOIN authors a ON a.id = m.author_id
-                WHERE a.source_site_id = ? AND m.status = 'active'
-                ORDER BY {POPULARITY_SCORE_SQL} DESC
-                LIMIT ?
-                """,
-                (author_sid, per_author),
-            ).fetchall()
-            result[author_sid] = [
-                {"source_site_id": int(r["source_site_id"]), "title": str(r["title"]),
-                 "thumbnail_url": r["thumbnail_url"],
-                 "view_count_display": format_number(r["view_count"]),
-                 "favorite_count_display": format_number(r["favorite_count"]),
-                 "author_name": str(r["author_name"])}
-                for r in rows
-            ]
+                WHERE a.source_site_id IN ({placeholders}) AND m.status = 'active'
+            )
+            SELECT * FROM ranked WHERE rn <= ?
+            """,
+            [*author_source_ids, per_author],
+        ).fetchall()
+
+        result: dict[int, list[dict[str, Any]]] = {sid: [] for sid in author_source_ids}
+        for r in rows:
+            result[int(r["author_sid"])].append({
+                "source_site_id": int(r["source_site_id"]),
+                "title": str(r["title"]),
+                "thumbnail_url": r["thumbnail_url"],
+                "view_count_display": format_number(r["view_count"]),
+                "favorite_count_display": format_number(r["favorite_count"]),
+                "author_name": str(r["author_name"]),
+            })
         return result
 
     def sidebar_rankings(self, *, per_section_limit: int = 12) -> dict[str, list[dict[str, Any]]]:
@@ -1053,6 +1066,34 @@ class Repository:
             "authors": self.list_entity_rankings("authors", limit=per_section_limit),
             "categories": self.list_category_rankings(limit=per_section_limit),
         }
+
+    def count_entity_rankings(self, kind: EntityKind) -> int:
+        if kind == "authors":
+            row = self.conn.execute(
+                """
+                SELECT COUNT(DISTINCT a.id) AS n
+                FROM authors a
+                JOIN movies m ON m.author_id = a.id
+                WHERE m.status = 'active'
+                """
+            ).fetchone()
+            return int(row["n"])
+
+        table, join_column = self._entity_table(kind)
+        join_table = f"movie_{kind}"
+        row = self.conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT ent.id) AS n
+            FROM {table} ent
+            JOIN {join_table} rel ON rel.{join_column} = ent.id
+            JOIN movies m ON m.id = rel.movie_id
+            WHERE m.status = 'active'
+            """
+        ).fetchone()
+        return int(row["n"])
+
+    def count_category_rankings(self) -> int:
+        return self.count_entity_rankings("tags") + self.count_entity_rankings("origins")
 
     def list_entity_rankings(
         self,
