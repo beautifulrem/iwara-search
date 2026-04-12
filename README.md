@@ -1,5 +1,12 @@
 # Search Iwara
 
+![License: MIT](https://img.shields.io/badge/License-MIT-f2c94c?style=flat-square)
+![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)
+![Backend FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Database SQLite + FTS5](https://img.shields.io/badge/Database-SQLite%20%2B%20FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)
+![Search Local-first](https://img.shields.io/badge/Search-Local--first-5C6BC0?style=flat-square)
+![Deploy Linux + nginx](https://img.shields.io/badge/Deploy-Linux%20%2B%20nginx-4CAF50?style=flat-square&logo=nginx&logoColor=white)
+
 Local-first metadata mirror of [Oreno3D](https://oreno3d.com/) with advanced search and filtering capabilities.
 
 Crawls video metadata (title, author, tags, origins, characters, view/favorite counts, thumbnails, Iwara links) from Oreno3D and stores it in a local SQLite database. Provides a web UI for searching, filtering, and browsing — features the original site doesn't offer.
@@ -97,7 +104,10 @@ This installs:
 - `search-iwara-web.service`
 - `search-iwara-sync.service`
 - `search-iwara-sync.timer`
+- `uv` automatically if it is missing
 - a generic nginx site config you can adapt to your domain
+
+If you keep nginx mode enabled, the installer will also try to install `nginx` automatically when it is missing.
 
 If you only want to bind the app directly on a public port and skip nginx:
 

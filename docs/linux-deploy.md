@@ -57,7 +57,10 @@ This will:
 - install the `systemd` units into `/etc/systemd/system`
 - enable and start the web service
 - enable the sync timer
+- auto-install `uv` if it is missing
 - install and reload an nginx site config
+
+If nginx mode is enabled and `nginx` is missing, the installer will also attempt to install it automatically using the system package manager.
 
 The generated nginx config is intentionally generic and starts with:
 

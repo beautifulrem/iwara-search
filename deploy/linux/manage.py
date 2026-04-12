@@ -8,7 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -16,7 +16,6 @@ from typing import Callable
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 INSTALL_SCRIPT = SCRIPT_DIR / "install.sh"
-NGINX_GENERIC_TEMPLATE = SCRIPT_DIR / "nginx" / "search-iwara.conf.template"
 NGINX_HTTP_TEMPLATE = SCRIPT_DIR / "nginx" / "search-iwara-http.conf.template"
 NGINX_HTTPS_TEMPLATE = SCRIPT_DIR / "nginx" / "search-iwara-https.conf.template"
 DEFAULT_ENV_FILE = Path("/etc/search-iwara/search-iwara.env")
@@ -58,11 +57,26 @@ def default_service_group(user: str) -> str:
     return grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
 
 
+def find_existing_uv_bin() -> str:
+    candidates = ["/usr/local/bin/uv", "/usr/bin/uv"]
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        try:
+            candidates.append(str(Path(pwd.getpwnam(sudo_user).pw_dir) / ".local" / "bin" / "uv"))
+        except KeyError:
+            pass
+    candidates.append(str(Path.home() / ".local" / "bin" / "uv"))
+    for candidate in candidates:
+        if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return shutil.which("uv") or "/usr/local/bin/uv"
+
+
 def default_config() -> DeployConfig:
     user = default_service_user()
     return DeployConfig(
         app_dir=str(REPO_ROOT),
-        uv_bin=shutil.which("uv") or "uv",
+        uv_bin=find_existing_uv_bin(),
         db_path=str(REPO_ROOT / "data" / "oreno3d.sqlite3"),
         web_host="127.0.0.1",
         web_port=8000,
@@ -456,6 +470,8 @@ def demote(user: str, group: str) -> Callable[[], None]:
 
 def run_as_service_user(config: DeployConfig, cmd: list[str]) -> None:
     env = env_for_sync(config)
+    uv_bin = config.uv_bin if Path(config.uv_bin).exists() else find_existing_uv_bin()
+    cmd = [uv_bin if part == config.uv_bin else part for part in cmd]
     subprocess.run(
         cmd,
         cwd=config.app_dir,

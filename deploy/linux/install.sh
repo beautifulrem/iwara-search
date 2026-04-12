@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
@@ -16,7 +17,9 @@ SYSTEMD_DIR="/etc/systemd/system"
 NGINX_AVAILABLE_DIR="/etc/nginx/sites-available"
 NGINX_ENABLED_DIR="/etc/nginx/sites-enabled"
 ENABLE_NGINX="1"
-UV_BIN="$(command -v uv || true)"
+UV_BIN=""
+PACKAGE_MANAGER=""
+PACKAGE_MANAGER_PREPARED="0"
 
 usage() {
   cat <<'EOF'
@@ -54,6 +57,127 @@ require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     err "required command not found: $1"
   fi
+}
+
+detect_package_manager() {
+  local candidates=(apt-get dnf yum zypper pacman apk)
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if command -v "${candidate}" >/dev/null 2>&1; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+prepare_package_manager() {
+  if [[ -n "${PACKAGE_MANAGER}" ]]; then
+    return 0
+  fi
+  PACKAGE_MANAGER="$(detect_package_manager || true)"
+  [[ -n "${PACKAGE_MANAGER}" ]] || err "could not detect a supported package manager for automatic dependency installation"
+}
+
+install_packages() {
+  prepare_package_manager
+  case "${PACKAGE_MANAGER}" in
+    apt-get)
+      if [[ "${PACKAGE_MANAGER_PREPARED}" != "1" ]]; then
+        apt-get update
+        PACKAGE_MANAGER_PREPARED="1"
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+      ;;
+    dnf)
+      dnf install -y "$@"
+      ;;
+    yum)
+      yum install -y "$@"
+      ;;
+    zypper)
+      zypper --non-interactive install --no-confirm "$@"
+      ;;
+    pacman)
+      pacman -Sy --noconfirm --needed "$@"
+      ;;
+    apk)
+      apk add --no-cache "$@"
+      ;;
+    *)
+      err "unsupported package manager: ${PACKAGE_MANAGER}"
+      ;;
+  esac
+}
+
+lookup_user_home() {
+  local user="$1"
+  if command -v getent >/dev/null 2>&1; then
+    getent passwd "${user}" | cut -d: -f6
+  else
+    eval printf '%s' "~${user}"
+  fi
+}
+
+find_uv_bin() {
+  local candidates=("/usr/local/bin/uv" "/usr/bin/uv")
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    local sudo_home
+    sudo_home="$(lookup_user_home "${SUDO_USER}" || true)"
+    if [[ -n "${sudo_home}" ]]; then
+      candidates+=("${sudo_home}/.local/bin/uv")
+    fi
+  fi
+  candidates+=("/root/.local/bin/uv")
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -x "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  if command -v uv >/dev/null 2>&1; then
+    command -v uv
+    return 0
+  fi
+  return 1
+}
+
+ensure_download_client() {
+  if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    return 0
+  fi
+  printf 'Installing curl and CA certificates for uv bootstrap...\n'
+  install_packages curl ca-certificates
+}
+
+ensure_uv() {
+  UV_BIN="$(find_uv_bin || true)"
+  if [[ -n "${UV_BIN}" ]]; then
+    return 0
+  fi
+
+  printf 'uv not found. Installing uv system-wide to /usr/local/bin...\n'
+  ensure_download_client
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh
+  else
+    wget -qO- https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh
+  fi
+
+  UV_BIN="$(find_uv_bin || true)"
+  [[ -n "${UV_BIN}" ]] || err "uv installation finished but no executable was found"
+}
+
+ensure_nginx() {
+  if command -v nginx >/dev/null 2>&1; then
+    return 0
+  fi
+  printf 'nginx not found. Installing nginx...\n'
+  install_packages nginx
+  require_cmd nginx
 }
 
 escape_sed() {
@@ -136,7 +260,7 @@ done
 
 require_root
 require_cmd systemctl
-[[ -n "${UV_BIN}" ]] || err "uv is not installed or not on PATH"
+ensure_uv
 [[ "${SYNC_INTERVAL_HOURS}" =~ ^[1-9][0-9]*$ ]] || err "--sync-hours must be a positive integer"
 
 if [[ -z "${DB_PATH}" ]]; then
@@ -148,7 +272,7 @@ if [[ ! -f "${APP_DIR}/pyproject.toml" || ! -d "${APP_DIR}/search_iwara" ]]; the
 fi
 
 if [[ "${ENABLE_NGINX}" == "1" ]]; then
-  require_cmd nginx
+  ensure_nginx
 fi
 
 mkdir -p "$(dirname -- "${ENV_FILE}")" "${SYSTEMD_DIR}"
