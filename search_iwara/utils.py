@@ -78,6 +78,10 @@ def fts_query_from_text(value: str, mode: str) -> str | None:
     return joiner.join(f'"{token.replace("\"", "\"\"")}"' for token in tokens)
 
 
+def escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def parse_csv_ids(value: str | None) -> list[int]:
     if not value:
         return []

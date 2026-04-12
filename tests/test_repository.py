@@ -139,6 +139,37 @@ def test_repository_upsert_and_boolean_search(tmp_path: Path):
     repo.close()
 
 
+def test_repository_title_search_falls_back_to_substring_matching(tmp_path: Path):
+    repo = Repository.open(tmp_path / "repo-substring.sqlite3")
+    with repo.transaction():
+        repo.apply_movie_detail(
+            make_detail(
+                201,
+                title="【MMD】潜入!射精我慢賭博!~キヴォトスのピンク色の闇を暴け!~",
+                author=(30, "Author C"),
+                tags=[(4, "Tag Four")],
+            )
+        )
+
+    partial = repo.search_movies(SearchFilters(q="キヴォトス", title_mode="all"), page=1, page_size=20)
+    assert [item["source_site_id"] for item in partial["items"]] == [201]
+
+    middle_substring = repo.search_movies(SearchFilters(q="我慢", title_mode="all"), page=1, page_size=20)
+    assert [item["source_site_id"] for item in middle_substring["items"]] == [201]
+
+    exact = repo.search_movies(
+        SearchFilters(q="【MMD】潜入！射精我慢賭博！～キヴォトスのピンク色の闇を暴け！～", title_mode="all"),
+        page=1,
+        page_size=20,
+    )
+    assert [item["source_site_id"] for item in exact["items"]] == [201]
+
+    multi_token = repo.search_movies(SearchFilters(q="MMD キヴォトス", title_mode="all"), page=1, page_size=20)
+    assert [item["source_site_id"] for item in multi_token["items"]] == [201]
+
+    repo.close()
+
+
 def test_repository_replaces_tag_links_without_duplicates(tmp_path: Path):
     repo = Repository.open(tmp_path / "repo-2.sqlite3")
     with repo.transaction():

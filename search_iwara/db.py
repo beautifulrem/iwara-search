@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from .config import get_settings
 from .models import EntityRef, ListUpsertResult, MovieDetail, MovieListItem, SearchFilters
-from .utils import format_number, fts_query_from_text, page_count, utc_now
+from .utils import escape_like, format_number, fts_query_from_text, page_count, split_query_tokens, utc_now
 
 
 EntityKind = Literal["authors", "tags", "origins", "characters"]
@@ -556,10 +556,21 @@ class Repository:
         clauses = ["m.status = 'active'"]
         params: list[Any] = []
 
+        title_clauses: list[str] = []
         fts_query = fts_query_from_text(filters.q, filters.title_mode)
         if fts_query:
-            clauses.append("m.id IN (SELECT rowid FROM movie_fts WHERE movie_fts MATCH ?)")
+            title_clauses.append("m.id IN (SELECT rowid FROM movie_fts WHERE movie_fts MATCH ?)")
             params.append(fts_query)
+
+        title_tokens = split_query_tokens(filters.q)
+        if title_tokens:
+            joiner = " OR " if filters.title_mode == "any" else " AND "
+            like_clauses = ["m.title LIKE ? ESCAPE '\\'" for _ in title_tokens]
+            title_clauses.append(f"({joiner.join(like_clauses)})")
+            params.extend(f"%{escape_like(token)}%" for token in title_tokens)
+
+        if title_clauses:
+            clauses.append(f"({' OR '.join(title_clauses)})")
 
         if filters.author_any:
             placeholders = ", ".join("?" for _ in filters.author_any)

@@ -44,6 +44,23 @@ def seed_db(db_path: Path) -> None:
                 author_comment="Another comment",
             )
         )
+        repo.apply_movie_detail(
+            MovieDetail(
+                source_site_id=202,
+                oreno3d_url="https://oreno3d.com/movies/202",
+                external_video_url="https://www.iwara.tv/video/202",
+                title="【MMD】潜入!射精我慢賭博!~キヴォトスのピンク色の闇を暴け!~",
+                author=EntityRef(12, "Author Twelve", "https://oreno3d.com/authors/12"),
+                tags=[EntityRef(32, "Tag Beta", "https://oreno3d.com/tags/32")],
+                origins=[EntityRef(42, "Origin Blue Archive", "https://oreno3d.com/origins/42")],
+                characters=[EntityRef(52, "Character Two", "https://oreno3d.com/characters/52")],
+                thumbnail_url="https://oreno3d.com/storage/202.jpg",
+                published_at="2026-04-12 06:00",
+                view_count=888,
+                favorite_count=222,
+                author_comment="JP title test",
+            )
+        )
     repo.close()
 
 
@@ -70,6 +87,14 @@ def test_web_search_and_detail_routes(tmp_path: Path):
     hot_alias = client.get("/", params={"sort": "hot"})
     assert hot_alias.status_code == 200
     assert "飙升" in hot_alias.text
+
+    jp_title = client.get("/", params={"q": "キヴォトス", "title_mode": "all"})
+    assert jp_title.status_code == 200
+    assert "【MMD】潜入!射精我慢賭博!~キヴォトスのピンク色の闇を暴け!~" in jp_title.text
+
+    middle_substring = client.get("/", params={"q": "我慢", "title_mode": "all"})
+    assert middle_substring.status_code == 200
+    assert "【MMD】潜入!射精我慢賭博!~キヴォトスのピンク色の闇を暴け!~" in middle_substring.text
 
     detail = client.get("/movies/200")
     assert detail.status_code == 200
