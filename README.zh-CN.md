@@ -2,7 +2,9 @@
 
 [English](./README.md) · 简体中文
 
-**在线示例：** <https://zundamon.dpdns.org/>
+**在线示例（NSFW）：** <https://zundamon.dpdns.org/>
+
+**社区友链：** [LINUX DO](https://linux.do/)
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-f2c94c?style=flat-square)
 ![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)
@@ -10,6 +12,8 @@
 ![Database SQLite + FTS5](https://img.shields.io/badge/Database-SQLite%20%2B%20FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)
 
 [Oreno3D](https://oreno3d.com/) 元数据的本地镜像，提供原站不具备的高级搜索与筛选能力。
+
+**提示：** 在线示例会展示成人向内容元数据，请勿在办公或公共场合直接打开。
 
 本项目从 Oreno3D 抓取视频元数据（标题、作者、标签、原作、角色、观看/收藏数、缩略图、Iwara 链接），存入本地 SQLite，并通过 Web UI 提供搜索、筛选与浏览。
 

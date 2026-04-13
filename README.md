@@ -2,7 +2,9 @@
 
 English · [简体中文](./README.zh-CN.md)
 
-**Live demo:** <https://zundamon.dpdns.org/>
+**Live demo (NSFW):** <https://zundamon.dpdns.org/>
+
+**Community:** [LINUX DO](https://linux.do/)
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-f2c94c?style=flat-square)
 ![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)
@@ -10,6 +12,8 @@ English · [简体中文](./README.zh-CN.md)
 ![Database SQLite + FTS5](https://img.shields.io/badge/Database-SQLite%20%2B%20FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)
 
 Local-first metadata mirror of [Oreno3D](https://oreno3d.com/) with advanced search and filtering capabilities.
+
+**Warning:** The live demo links to adult-content metadata. Do not open it in public or work environments.
 
 Crawls video metadata (title, author, tags, origins, characters, view/favorite counts, thumbnails, Iwara links) from Oreno3D and stores it in a local SQLite database. Provides a web UI for searching, filtering, and browsing — features the original site doesn't offer.
 
