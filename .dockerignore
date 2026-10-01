@@ -1,0 +1,24 @@
+# Keep the build context small and free of local state / secrets.
+.git
+.github
+.venv
+.uv-python
+data
+docs
+deploy
+!deploy/docker/
+tests
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.egg-info
+*.sqlite3*
+.env
+.env.*
+.DS_Store
+compose.yaml
+Dockerfile

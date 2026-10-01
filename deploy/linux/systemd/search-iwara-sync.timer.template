@@ -1,10 +1,12 @@
+# __MANAGED_MARKER__
 [Unit]
-Description=Run Search Iwara sync latest every __SYNC_INTERVAL_HOURS__ hour(s)
+Description=Run Search Iwara incremental sync every __SYNC_INTERVAL_HOURS__ hour(s)
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=__SYNC_INTERVAL_HOURS__h
-AccuracySec=5min
+OnCalendar=__SYNC_ON_CALENDAR__
+RandomizedDelaySec=10min
+AccuracySec=1min
+# Catch up on a missed run after downtime (works with OnCalendar=).
 Persistent=true
 Unit=search-iwara-sync.service
 

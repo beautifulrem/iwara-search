@@ -1,0 +1,5 @@
+# This file is included inside nginx's `http {}` block (sites-enabled/ on
+# Debian/Ubuntu, conf.d/ on RHEL/Fedora/Arch), so the shared rate-limit zones
+# are declared here at http level.
+limit_req_zone $binary_remote_addr zone=search_iwara_pages:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=search_iwara_api:10m rate=20r/s;

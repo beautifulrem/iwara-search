@@ -1,264 +1,198 @@
 {% extends "base.html" %}
 
-{% block title %}{{ tr("brand") }}{% endblock %}
-
 {% block content %}
-  <div class="sort-bar">
-    <a class="sort-tab {% if filters.sort == 'hot_desc' %}sort-tab--active{% endif %}"
-      href="{{ search_href(sort='hot_desc', published_from=none, published_to=none, min_views=none, max_views=none, min_favorites=none, max_favorites=none) }}">
-      <span class="material-symbols-outlined">trending_up</span><span>{{ tr("sort.hot") }}</span>
-    </a>
-    <a class="sort-tab {% if filters.sort == 'favorites_desc' %}sort-tab--active{% endif %}"
-       href="{{ search_href(sort='favorites_desc', min_favorites=none, max_favorites=none) }}">
-      <span class="material-symbols-outlined">favorite</span><span>{{ tr("sort.favorites") }}</span>
-    </a>
-    <a class="sort-tab {% if filters.sort == 'published_desc' %}sort-tab--active{% endif %}"
-       href="{{ search_href(sort='published_desc', published_from=none, published_to=none) }}">
-      <span class="material-symbols-outlined">fiber_new</span><span>{{ tr("sort.latest") }}</span>
-    </a>
-    <a class="sort-tab {% if filters.sort == 'popularity_desc' %}sort-tab--active{% endif %}"
-       href="{{ search_href(sort='popularity_desc', min_views=none, max_views=none, min_favorites=none, max_favorites=none) }}">
-      <span class="material-symbols-outlined">emoji_events</span><span>{{ tr("sort.popularity") }}</span>
-    </a>
-    <span class="sort-bar__spacer"></span>
-    <button class="filter-toggle-btn" id="filter-toggle" type="button">
-      <span class="material-symbols-outlined">tune</span><span>{{ tr("sort.filter") }}</span>
-    </button>
-  </div>
+{% set count_text = results.total|number ~ ("+" if results.total_is_capped else "") %}
+<section class="results" aria-labelledby="results-title">
+  <div class="results-head">
+    <div class="results-head__title">
+      <h1 id="results-title">
+        {% if filters.q %}{{ tr("results.title_query", q=filters.q) }}{% else %}{{ tr("results.title_all") }}{% endif %}
+      </h1>
+      <p class="results-head__count" role="status">{{ tr("results.count", count=results.total, shown=count_text) }}</p>
+    </div>
 
-  <div class="filter-panel" id="filter-panel">
-    <form method="get" action="/">
-      {% for name in ['q', 'title_mode', 'lang'] %}
-        {% set value = request.query_params.get(name) %}
-        {% if value %}
-          <input type="hidden" name="{{ name }}" value="{{ value }}">
-        {% endif %}
-      {% endfor %}
-      <input type="hidden" name="sort" id="sort-hidden" value="{{ filters.sort }}">
-      <div class="filter-grid">
-        <section class="filter-card">
-          <h3>{{ tr("filter.author_any.title") }}</h3>
-          <p>{{ tr("filter.author_any.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/authors">
-            <input type="hidden" name="author_any" value="{{ filter_state.author_any }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.author_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.author_any.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
+    <div class="toolbar">
+      <nav class="segmented" aria-label="{{ tr('sort.quick_aria') }}">
+        {% for option in quick_sorts %}
+        <a class="segmented__item" href="{{ option.href }}"{% if option.active %} aria-current="page"{% endif %}>
+          {{ ui.icon(option.icon) }}<span>{{ tr("sort.option." ~ option.value) }}</span>
+        </a>
+        {% endfor %}
+      </nav>
 
-        <section class="filter-card">
-          <h3>{{ tr("filter.author_not.title") }}</h3>
-          <p>{{ tr("filter.author_not.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/authors">
-            <input type="hidden" name="author_not" value="{{ filter_state.author_not }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.author_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.author_not.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card">
-          <h3>{{ tr("filter.origin_any.title") }}</h3>
-          <p>{{ tr("filter.origin_any.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/origins">
-            <input type="hidden" name="origin_any" value="{{ filter_state.origin_any }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.origin_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.origin_any.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card">
-          <h3>{{ tr("filter.origin_not.title") }}</h3>
-          <p>{{ tr("filter.origin_not.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/origins">
-            <input type="hidden" name="origin_not" value="{{ filter_state.origin_not }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.origin_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.origin_not.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card">
-          <h3>{{ tr("filter.character_any.title") }}</h3>
-          <p>{{ tr("filter.character_any.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/characters">
-            <input type="hidden" name="character_any" value="{{ filter_state.character_any }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.character_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.character_any.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card">
-          <h3>{{ tr("filter.character_not.title") }}</h3>
-          <p>{{ tr("filter.character_not.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/characters">
-            <input type="hidden" name="character_not" value="{{ filter_state.character_not }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.character_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.character_not.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card">
-          <h3>{{ tr("filter.tag_all.title") }}</h3>
-          <p>{{ tr("filter.tag_all.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/tags">
-            <input type="hidden" name="tag_all" value="{{ filter_state.tag_all }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.tag_all %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.tag_all.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card">
-          <h3>{{ tr("filter.tag_any.title") }}</h3>
-          <p>{{ tr("filter.tag_any.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/tags">
-            <input type="hidden" name="tag_any" value="{{ filter_state.tag_any }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.tag_any %}
-                <span class="chip" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.tag_any.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card">
-          <h3>{{ tr("filter.tag_not.title") }}</h3>
-          <p>{{ tr("filter.tag_not.desc") }}</p>
-          <div class="selector" data-autocomplete-root data-api="/api/tags">
-            <input type="hidden" name="tag_not" value="{{ filter_state.tag_not }}">
-            <div class="selector__chips" data-chip-container>
-              {% for item in selected.tag_not %}
-                <span class="chip chip--negative" data-id="{{ item.id }}">{{ item.name }}<button type="button" aria-label="{{ tr('common.delete') }}">×</button></span>
-              {% endfor %}
-            </div>
-            <input type="text" data-autocomplete-input placeholder="{{ tr('filter.tag_not.placeholder') }}">
-            <div class="selector__suggestions" data-suggestions hidden></div>
-          </div>
-        </section>
-
-        <section class="filter-card filter-card--full">
-          <h3>{{ tr("filter.metrics.title") }}</h3>
-          <p>{{ tr("filter.metrics.desc") }}</p>
-          <div class="metrics-grid">
-            <div class="field">
-              <label for="published_from">{{ tr("filter.metrics.published_from") }}</label>
-              <input id="published_from" name="published_from" type="date" data-conflicts="published_desc hot_desc" value="{{ filter_state.published_from }}">
-            </div>
-            <div class="field">
-              <label for="published_to">{{ tr("filter.metrics.published_to") }}</label>
-              <input id="published_to" name="published_to" type="date" data-conflicts="published_desc hot_desc" value="{{ filter_state.published_to }}">
-            </div>
-            <div class="field">
-              <label for="min_views">{{ tr("filter.metrics.min_views") }}</label>
-              <input id="min_views" name="min_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.min_views }}" placeholder="{{ tr('filter.metrics.min_views_placeholder') }}">
-            </div>
-            <div class="field">
-              <label for="max_views">{{ tr("filter.metrics.max_views") }}</label>
-              <input id="max_views" name="max_views" type="number" min="0" step="1" data-conflicts="popularity_desc hot_desc" value="{{ filter_state.max_views }}" placeholder="{{ tr('filter.metrics.max_views_placeholder') }}">
-            </div>
-            <div class="field">
-              <label for="min_favorites">{{ tr("filter.metrics.min_favorites") }}</label>
-              <input id="min_favorites" name="min_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.min_favorites }}" placeholder="{{ tr('filter.metrics.min_favorites_placeholder') }}">
-            </div>
-            <div class="field">
-              <label for="max_favorites">{{ tr("filter.metrics.max_favorites") }}</label>
-              <input id="max_favorites" name="max_favorites" type="number" min="0" step="1" data-conflicts="favorites_desc popularity_desc hot_desc" value="{{ filter_state.max_favorites }}" placeholder="{{ tr('filter.metrics.max_favorites_placeholder') }}">
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div class="filter-actions">
-        <button class="btn btn--primary" type="submit">{{ tr("filter.submit") }}</button>
-        <a class="btn btn--ghost" href="/">{{ tr("filter.clear") }}</a>
-      </div>
-    </form>
-  </div>
-
-  <div class="results-bar">{{ tr("results.count", count=total) }}</div>
-
-  {% if results %}
-    <section class="video-grid">
-      {% for movie in results %}
-        <article class="video-card">
-          <a class="video-card__cover" href="{{ request.url_for('movie_detail', source_site_id=movie.source_site_id) }}">
-            {% if movie.thumbnail_url %}
-              <img src="{{ movie.thumbnail_url }}" alt="{{ movie.title }}" loading="lazy">
-            {% else %}
-              <div class="video-card__placeholder">{{ tr("common.no_image") }}</div>
+      {#- The segmented control holds the four everyday orders; the menu only offers the rest,
+          so no order is ever shown twice. -#}
+      {% set quick_values = quick_sorts|map(attribute="value")|list %}
+      {% set more_active = filters.sort not in quick_values %}
+      <form class="sort-form" action="/" method="get" data-sort-form>
+        {% for key, value in query.items() if key != "sort" %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        <label class="sr-only" for="sort-select">{{ tr("sort.more_label") }}</label>
+        <div class="select{% if more_active %} is-active{% endif %}">
+          {{ ui.icon("arrow-up-down", "select__icon") }}
+          <select id="sort-select" name="sort">
+            {% if not more_active %}
+            <option value="{{ filters.sort }}" selected>{{ tr("sort.more") }}</option>
             {% endif %}
-            <div class="video-card__stats">
-              <span><span class="material-symbols-outlined">remove_red_eye</span>{{ movie.view_count_display }}</span>
-              <span><span class="material-symbols-outlined">favorite</span>{{ movie.favorite_count_display }}</span>
-            </div>
-          </a>
-          <div class="video-card__body">
-            <h3 class="video-card__title"><a href="{{ request.url_for('movie_detail', source_site_id=movie.source_site_id) }}">{{ movie.title }}</a></h3>
-            <p class="video-card__author">{{ movie.author_name }}</p>
-            <div class="video-card__tags">
-              {% if movie.tags %}
-                {% for tag in movie.tags[:5] %}
-                  <span class="mini-tag">{{ tag.name }}</span>
-                {% endfor %}
-              {% endif %}
-            </div>
-          </div>
-        </article>
+            {% for option in sort_options if option.value not in quick_values %}
+            <option value="{{ option.value }}" data-href="{{ option.href }}"{% if option.active %} selected{% endif %}>{{ tr("sort.option." ~ option.value) }}</option>
+            {% endfor %}
+          </select>
+          {{ ui.icon("chevron-down", "select__chevron") }}
+        </div>
+        <noscript><button class="btn btn--secondary btn--sm" type="submit">{{ tr("sort.apply") }}</button></noscript>
+      </form>
+
+      {% set filter_badge %}{% if active_filter_count %}<span class="badge">{{ active_filter_count }}<span class="sr-only"> {{ tr("filter.active_suffix") }}</span></span>{% endif %}{% endset %}
+      {#- commandfor/command: native Invoker Commands open the dialog even before (or without) app.js. -#}
+      <button class="btn btn--secondary filter-trigger" type="button" data-dialog-open="filters"
+        commandfor="filters" command="show-modal" aria-controls="filters" aria-haspopup="dialog" aria-expanded="false">
+        {{ ui.icon("sliders") }}<span>{{ tr("filter.open") }}</span>{{ filter_badge }}
+      </button>
+      <noscript>
+        <a class="btn btn--secondary filter-trigger" href="#filters">{{ ui.icon("sliders") }}<span>{{ tr("filter.open") }}</span>{{ filter_badge }}</a>
+      </noscript>
+    </div>
+  </div>
+
+  {% if active_filters %}
+  <div class="active-filters">
+    <h2 class="sr-only">{{ tr("filter.active_title") }}</h2>
+    <ul class="active-filters__list">
+      {% for chip in active_filters %}
+      <li>
+        <a class="filter-chip{% if chip.negative %} filter-chip--negative{% endif %}" href="{{ chip.remove_href }}">
+          <span class="filter-chip__group">{{ chip.group }}</span>
+          <span class="filter-chip__label">{{ chip.label }}</span>
+          {{ ui.icon("x", "filter-chip__x") }}
+          <span class="sr-only">{{ tr("filter.remove_one") }}</span>
+        </a>
+      </li>
       {% endfor %}
-    </section>
-  {% else %}
-    <section class="empty-state">
-      <h2>{{ tr("results.empty.title") }}</h2>
-      <p>{{ tr("results.empty.body") }}</p>
-    </section>
+    </ul>
+    <a class="active-filters__clear" href="{{ clear_filters_href }}">{{ tr("filter.clear_all") }}</a>
+  </div>
   {% endif %}
 
-  {% if page_count > 1 %}
-    <nav class="pagination" aria-label="{{ tr('pagination.aria') }}">
-      {% for item in pagination_items %}
-        {% if item.ellipsis %}
-          <span class="pagination__ellipsis">&hellip;</span>
-        {% elif item.active %}
-          <span class="pagination__item pagination__item--active">{{ item.page }}</span>
-        {% else %}
-          <a class="pagination__item" href="{{ item.href }}">{{ item.page }}</a>
-        {% endif %}
-      {% endfor %}
-    </nav>
+  {% if results.items %}
+  {{ ui.card_grid(results.items, heading="h2", eager_count=4) }}
+  {{ ui.pager(pagination) }}
+  {% elif empty_database %}
+  <div class="empty-state empty-state--onboarding">
+    <div class="empty-state__icon">{{ ui.icon("database") }}</div>
+    <h2>{{ tr("empty_db.title") }}</h2>
+    <p>{{ tr("empty_db.body") }}</p>
+    <div class="command">
+      <code class="command__text" id="sync-command">uv run search-iwara sync latest</code>
+      <button class="btn btn--secondary btn--sm js-only" type="button" data-copy="#sync-command">
+        {{ ui.icon("copy") }}<span>{{ tr("common.copy") }}</span>
+      </button>
+    </div>
+    <p class="empty-state__note">{{ tr("empty_db.note") }}</p>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state__icon">{{ ui.icon("search") }}</div>
+    <h2>{{ tr("results.empty.title") }}</h2>
+    <p>{{ tr("results.empty.body") }}</p>
+    <ul class="empty-state__tips">
+      <li>{{ tr("results.empty.tip_short") }}</li>
+      <li>{{ tr("results.empty.tip_any") }}</li>
+      <li>{{ tr("results.empty.tip_filters") }}</li>
+    </ul>
+    <div class="empty-state__actions">
+      {% if active_filters %}
+      <a class="btn btn--primary" href="{{ clear_filters_href }}">{{ tr("filter.clear_all") }}</a>
+      {% endif %}
+      <a class="btn btn--secondary" href="/">{{ tr("results.empty.browse_all") }}</a>
+    </div>
+  </div>
   {% endif %}
+</section>
+
+<dialog class="sheet" id="filters" aria-labelledby="filters-title">
+  <form class="sheet__form" action="/" method="get" data-busy-form>
+    <div class="sheet__head">
+      <h2 class="sheet__title" id="filters-title">{{ ui.icon("sliders") }}{{ tr("filter.title") }}</h2>
+      <button class="icon-btn" type="button" data-dialog-close commandfor="filters" command="close">{{ ui.icon("x") }}<span class="sr-only">{{ tr("common.close") }}</span></button>
+    </div>
+
+    <div class="sheet__body">
+      <input type="hidden" name="sort" value="{{ filters.sort }}">
+      {% if request.query_params.get("lang") %}
+      <input type="hidden" name="lang" value="{{ lang }}">
+      {% endif %}
+
+      <details class="fgroup" open>
+        <summary class="fgroup__summary">{{ ui.icon("search") }}<span>{{ tr("filter.group.keyword") }}</span>{{ ui.icon("chevron-down", "fgroup__chevron") }}</summary>
+        <div class="fgroup__body">
+          <div class="field">
+            <label class="field__label" for="filter-q">{{ tr("filter.keyword.label") }}</label>
+            <input class="input" id="filter-q" type="search" name="q" value="{{ filters.q }}" maxlength="200" placeholder="{{ tr('header.search_placeholder') }}">
+          </div>
+          <fieldset class="field segmented-choice">
+            <legend class="field__label">{{ tr("filter.keyword.mode") }}</legend>
+            <label class="segmented-choice__option"><input type="radio" name="title_mode" value="all"{% if filters.title_mode == "all" %} checked{% endif %}><span>{{ tr("filter.keyword.mode_all") }}</span></label>
+            <label class="segmented-choice__option"><input type="radio" name="title_mode" value="any"{% if filters.title_mode == "any" %} checked{% endif %}><span>{{ tr("filter.keyword.mode_any") }}</span></label>
+          </fieldset>
+        </div>
+      </details>
+
+      {% set groups = {} %}
+      {% for group in filter_groups %}{% set _ = groups.update({group.name: group}) %}{% endfor %}
+      {% for key, icon_name, names in [
+        ("author", "user", ["author_any", "author_not"]),
+        ("character", "sparkles", ["character_any", "character_not"]),
+        ("origin", "book", ["origin_any", "origin_not"]),
+        ("tag", "tag", ["tag_all", "tag_any", "tag_not"]),
+      ] %}
+      {% set selected_count = namespace(n=0) %}
+      {% for name in names %}{% set selected_count.n = selected_count.n + groups[name].selected|length %}{% endfor %}
+      <details class="fgroup"{% if selected_count.n %} open{% endif %}>
+        <summary class="fgroup__summary">
+          {{ ui.icon(icon_name) }}<span>{{ tr("filter.group." ~ key) }}</span>
+          {% if selected_count.n %}<span class="badge badge--soft">{{ selected_count.n }}</span>{% endif %}
+          {{ ui.icon("chevron-down", "fgroup__chevron") }}
+        </summary>
+        <div class="fgroup__body">
+          {% for name in names %}{{ ui.combobox(groups[name]) }}{% endfor %}
+        </div>
+      </details>
+      {% endfor %}
+
+      {% set has_metrics = filters.published_from or filters.published_to or filters.min_views is not none or filters.max_views is not none or filters.min_favorites is not none or filters.max_favorites is not none %}
+      <details class="fgroup"{% if has_metrics %} open{% endif %}>
+        <summary class="fgroup__summary">{{ ui.icon("calendar") }}<span>{{ tr("filter.group.metrics") }}</span>{{ ui.icon("chevron-down", "fgroup__chevron") }}</summary>
+        <div class="fgroup__body">
+          {% for legend_key, fields in [
+            ("filter.range.published", [("published_from", "date", filters.published_from, "filter.metrics.from", ""), ("published_to", "date", filters.published_to, "filter.metrics.to", "")]),
+            ("filter.range.views", [("min_views", "number", filters.min_views, "filter.metrics.min", "1000"), ("max_views", "number", filters.max_views, "filter.metrics.max", "50000")]),
+            ("filter.range.favorites", [("min_favorites", "number", filters.min_favorites, "filter.metrics.min", "100"), ("max_favorites", "number", filters.max_favorites, "filter.metrics.max", "10000")]),
+          ] %}
+          <fieldset class="range">
+            <legend class="field__label">{{ tr(legend_key) }}</legend>
+            <div class="range__inputs">
+              {% for name, type, value, label_key, example in fields %}
+              <div class="field">
+                <label class="field__sublabel" for="filter-{{ name }}">{{ tr(label_key) }}</label>
+                <input class="input" id="filter-{{ name }}" name="{{ name }}" type="{{ type }}"
+                  value="{{ '' if value is none else value }}"
+                  {% if type == "number" %}min="0" step="1" inputmode="numeric" placeholder="{{ tr('filter.metrics.example', value=example) }}"{% endif %}>
+              </div>
+              {% if loop.first %}<span class="range__dash" aria-hidden="true">–</span>{% endif %}
+              {% endfor %}
+            </div>
+          </fieldset>
+          {% endfor %}
+        </div>
+      </details>
+    </div>
+
+    <div class="sheet__foot">
+      <a class="btn btn--ghost" href="{{ clear_filters_href }}">{{ tr("filter.clear_all") }}</a>
+      <button class="btn btn--primary" type="submit">{{ tr("filter.submit") }}</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}

@@ -1,122 +1,140 @@
 {% extends "base.html" %}
 
-{% block title %}{{ movie.title }} · {{ tr("brand") }}{% endblock %}
+{% block og_type %}video.other{% endblock %}
 
 {% block content %}
-  <nav class="detail-breadcrumb">
-    <a href="/">{{ tr("detail.breadcrumb.home") }}</a>
+{% set card = movie.card %}
+{% set thumb = card.thumbnail_url|safe_href %}
+{% set video_href = movie.external_video_url|safe_href %}
+{% set source_href = movie.oreno3d_url|safe_href %}
+
+<nav class="breadcrumb" aria-label="{{ tr('detail.breadcrumb.aria') }}">
+  <ol>
+    <li><a href="/">{{ tr("detail.breadcrumb.home") }}</a></li>
     {% if movie.origins %}
-      <span class="detail-breadcrumb__sep">&gt;</span>
-      <a href="/?origin_any={{ movie.origins[0].id }}">{{ movie.origins[0].name }}</a>
+    <li><a href="/?origin_any={{ movie.origins[0].id }}">{{ movie.origins[0].name }}</a></li>
     {% endif %}
     {% if movie.characters %}
-      <span class="detail-breadcrumb__sep">&gt;</span>
-      <a href="/?character_any={{ movie.characters[0].id }}">{{ movie.characters[0].name }}</a>
+    <li><a href="/?character_any={{ movie.characters[0].id }}">{{ movie.characters[0].name }}</a></li>
     {% endif %}
-    <span class="detail-breadcrumb__sep">&gt;</span>
-    <span>{{ tr("detail.breadcrumb.video") }}</span>
-  </nav>
+    <li><span aria-current="page"{{ card.title|lang_attr }}>{{ card.title or tr("common.untitled") }}</span></li>
+  </ol>
+</nav>
 
-  <div class="detail-thumbnail">
-    {% if movie.thumbnail_url %}
-      <img src="{{ movie.thumbnail_url }}" alt="{{ movie.title }}">
-    {% endif %}
+<article class="detail">
+  <div class="detail__media">
+    <figure class="detail__figure media-frame{% if not thumb %} is-broken{% endif %}">
+      {% if thumb %}
+      <img src="{{ thumb }}" alt="{{ tr('detail.thumbnail_alt', title=card.title) }}" width="1280" height="720"
+        decoding="async" loading="eager" fetchpriority="high" referrerpolicy="no-referrer">
+      {% endif %}
+      <span class="media-frame__fallback">{{ ui.icon("image-off") }}<span>{{ tr("common.no_image") }}</span></span>
+      {% if video_href %}
+      <a class="detail__play" href="{{ video_href }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">
+        {{ ui.icon("play") }}
+      </a>
+      {% endif %}
+    </figure>
   </div>
 
-  <h1 class="detail-title">{{ movie.title }}</h1>
-
-  <div class="detail-meta">
-    {% if movie.published_at %}<span>{{ movie.published_at }}</span>{% endif %}
-    <span>{{ tr("detail.views", count=movie.view_count_display) }}</span>
-    <span class="accent">{{ tr("detail.favorites", count=movie.favorite_count_display) }}</span>
-    <span class="status-pill {% if movie.status == 'missing' %}status-pill--missing{% endif %}">{{ tr("detail.status." ~ movie.status) }}</span>
-  </div>
-
-  <div class="detail-actions">
-    {% if movie.external_video_url %}
-      <a class="btn btn--primary" href="{{ movie.external_video_url }}" target="_blank" rel="noopener">{{ tr("detail.open_iwara") }}</a>
-    {% endif %}
-    <a class="btn btn--ghost" href="{{ movie.oreno3d_url }}" target="_blank" rel="noopener">{{ tr("detail.open_oreno3d") }}</a>
-    <a class="btn btn--ghost" href="/">{{ tr("detail.back_search") }}</a>
-  </div>
-
-  <div class="meta-grid">
-    <div class="meta-card">
-      <h3>{{ tr("detail.creator") }}</h3>
-      <div class="meta-card__items">
-        {% if movie.author_source_id %}
-          <a class="meta-chip" href="{{ search_href(author_any=movie.author_source_id) }}">{{ movie.author_name }}</a>
+  <div class="detail__info">
+    <div class="detail__sticky">
+      <div class="detail__badges">
+        {% if movie.status == "missing" %}
+        <span class="status status--missing">{{ tr("detail.status.missing") }}</span>
         {% else %}
-          <span class="meta-chip">{{ movie.author_name }}</span>
+        <span class="status status--active">{{ tr("detail.status.active") }}</span>
         {% endif %}
       </div>
-    </div>
-    <div class="meta-card">
-      <h3>{{ tr("detail.origin") }}</h3>
-      <div class="meta-card__items">
-        {% if movie.origins %}
-          {% for origin in movie.origins %}
-            <a class="meta-chip" href="{{ search_href(origin_any=origin.id) }}">{{ origin.name }}</a>
-          {% endfor %}
-        {% else %}
-          <span class="meta-chip">-</span>
-        {% endif %}
-      </div>
-    </div>
-    <div class="meta-card">
-      <h3>{{ tr("detail.character") }}</h3>
-      <div class="meta-card__items">
-        {% if movie.characters %}
-          {% for character in movie.characters %}
-            <a class="meta-chip" href="{{ search_href(character_any=character.id) }}">{{ character.name }}</a>
-          {% endfor %}
-        {% else %}
-          <span class="meta-chip">-</span>
-        {% endif %}
-      </div>
-    </div>
-    <div class="meta-card">
-      <h3>{{ tr("detail.tag") }}</h3>
-      <div class="meta-card__items">
-        {% if movie.tags %}
-          {% for tag in movie.tags %}
-            <a class="mini-tag" href="{{ search_href(tag_any=tag.id) }}">{{ tag.name }}</a>
-          {% endfor %}
-        {% else %}
-          <span class="mini-tag">-</span>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+      <h1 class="detail__title"{{ card.title|lang_attr }}>{{ card.title or tr("common.untitled") }}</h1>
 
-  {% if movie.author_comment %}
-    <blockquote class="comment-block">{{ movie.author_comment }}</blockquote>
-  {% endif %}
+      {% if movie.status == "missing" %}
+      <p class="notice">{{ tr("detail.missing_notice") }}</p>
+      {% endif %}
 
-  {% if related_movies %}
-    <section class="related-section">
-      <h2>{{ tr("detail.related") }}</h2>
-      <div class="video-grid">
-        {% for rel in related_movies %}
-          <article class="video-card">
-            <a class="video-card__cover" href="{{ request.url_for('movie_detail', source_site_id=rel.source_site_id) }}">
-              {% if rel.thumbnail_url %}
-                <img src="{{ rel.thumbnail_url }}" alt="{{ rel.title }}" loading="lazy">
-              {% else %}
-                <div class="video-card__placeholder">{{ tr("detail.no_image") }}</div>
-              {% endif %}
-              <div class="video-card__stats">
-                <span><span class="material-symbols-outlined">remove_red_eye</span>{{ rel.view_count_display }}</span>
-                <span><span class="material-symbols-outlined">favorite</span>{{ rel.favorite_count_display }}</span>
-              </div>
-            </a>
-            <div class="video-card__body">
-              <h3 class="video-card__title"><a href="{{ request.url_for('movie_detail', source_site_id=rel.source_site_id) }}">{{ rel.title }}</a></h3>
-              <p class="video-card__author">{{ rel.author_name }}</p>
-            </div>
-          </article>
+      <dl class="facts">
+        <div class="facts__item">
+          <dt>{{ ui.icon("eye") }}{{ tr("detail.views") }}</dt>
+          <dd>{{ card.view_count|number }}</dd>
+        </div>
+        <div class="facts__item">
+          <dt>{{ ui.icon("heart") }}{{ tr("detail.favorites") }}</dt>
+          <dd>{{ card.favorite_count|number }}</dd>
+        </div>
+        <div class="facts__item facts__item--wide">
+          <dt>{{ ui.icon("calendar") }}{{ tr("detail.published") }}</dt>
+          <dd>
+            {% if card.published_at %}
+            <time datetime="{{ card.published_at|iso_datetime }}">{{ card.published_at }}</time>
+            {% set relative = card.published_at|reltime %}
+            {% if not card.published_at.startswith(relative) %}<span class="facts__sub">{{ relative }}</span>{% endif %}
+            {% else %}—{% endif %}
+          </dd>
+        </div>
+      </dl>
+
+      <div class="detail__actions">
+        {% if video_href %}
+        <a class="btn btn--primary btn--lg" href="{{ video_href }}" target="_blank" rel="noopener noreferrer">
+          {{ ui.icon("play") }}<span>{{ tr("detail.open_iwara") }}</span>{{ ui.external_hint() }}
+        </a>
+        {% endif %}
+        {% if source_href %}
+        <a class="btn btn--secondary btn--lg" href="{{ source_href }}" target="_blank" rel="noopener noreferrer">
+          {{ ui.icon("external") }}<span>{{ tr("detail.open_oreno3d") }}</span>{{ ui.external_hint() }}
+        </a>
+        {% endif %}
+      </div>
+
+      <dl class="taxonomy">
+        <div class="taxonomy__row">
+          <dt>{{ ui.icon("user") }}{{ tr("detail.creator") }}</dt>
+          <dd>
+            {% if card.author_id is not none %}
+            <a class="pill-link" href="/?author_any={{ card.author_id }}">{{ card.author_name }}</a>
+            {% elif card.author_name %}
+            <span class="pill-link is-static">{{ card.author_name }}</span>
+            {% else %}<span class="taxonomy__none">—</span>{% endif %}
+          </dd>
+        </div>
+        {% for key, icon_name, items, param in [
+          ("detail.origin", "book", movie.origins, "origin_any"),
+          ("detail.character", "sparkles", movie.characters, "character_any"),
+          ("detail.tag", "tag", movie.tags, "tag_any"),
+        ] %}
+        <div class="taxonomy__row">
+          <dt>{{ ui.icon(icon_name) }}{{ tr(key) }}</dt>
+          <dd>
+            {% for item in items %}
+            <a class="pill-link" href="/?{{ param }}={{ item.id }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
+            {% else %}
+            <span class="taxonomy__none">—</span>
+            {% endfor %}
+          </dd>
+        </div>
         {% endfor %}
-      </div>
-    </section>
+      </dl>
+
+      <p class="detail__footnote">
+        <a class="link-back" href="/">{{ ui.icon("arrow-left") }}{{ tr("detail.back_search") }}</a>
+        {% if movie.detail_fetched_at %}
+        <span>{{ tr("detail.fetched_at") }} <time datetime="{{ movie.detail_fetched_at }}">{{ movie.detail_fetched_at|timestamp }}</time></span>
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  {% if movie.author_comment %}
+  <section class="panel detail__comment" aria-labelledby="comment-title">
+    <h2 class="panel__title" id="comment-title">{{ tr("detail.comment") }}</h2>
+    <p class="comment"{{ movie.author_comment|lang_attr }}>{{ movie.author_comment }}</p>
+  </section>
   {% endif %}
+</article>
+
+{% if related_movies %}
+<section class="related" aria-labelledby="related-title">
+  <h2 class="section-title" id="related-title">{{ tr("detail.related") }}</h2>
+  {{ ui.card_grid(related_movies, heading="h3") }}
+</section>
+{% endif %}
 {% endblock %}

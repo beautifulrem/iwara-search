@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
+# Started by search-iwara-web.service. Runtime settings come from the env file.
 set -euo pipefail
+# shellcheck source=deploy/linux/common.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
+require_app_bin
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="${APP_DIR:-$(cd -- "${SCRIPT_DIR}/../.." && pwd)}"
-UV_BIN="${UV_BIN:-uv}"
-SEARCH_IWARA_HOST="${SEARCH_IWARA_HOST:-127.0.0.1}"
-SEARCH_IWARA_PORT="${SEARCH_IWARA_PORT:-8000}"
+args=(
+  serve
+  --host "${SEARCH_IWARA_HOST:-127.0.0.1}"
+  --port "${SEARCH_IWARA_PORT:-8000}"
+  --proxy-headers
+  --forwarded-allow-ips "${SEARCH_IWARA_FORWARDED_ALLOW_IPS:-127.0.0.1}"
+)
 
-cd "${APP_DIR}"
-exec "${UV_BIN}" run search-iwara serve --host "${SEARCH_IWARA_HOST}" --port "${SEARCH_IWARA_PORT}"
+exec "${SEARCH_IWARA_BIN}" "${args[@]}"

@@ -1,0 +1,146 @@
+{#- Shared UI building blocks. Import with: {% import "_macros.html" as ui with context %} -#}
+
+{% macro icon(name, cls="") -%}
+<svg class="icon{% if cls %} {{ cls }}{% endif %}" aria-hidden="true" focusable="false"><use href="{{ static_url('icons.svg') }}#i-{{ name }}"></use></svg>
+{%- endmacro %}
+
+{% macro external_hint() -%}
+<span class="sr-only">{{ tr("common.opens_new_window") }}</span>
+{%- endmacro %}
+
+{#- A movie card. `heading` keeps the document outline correct wherever the grid appears. -#}
+{% macro card(movie, heading="h2", eager=False, show_tags=True) -%}
+{%- set href = url_for("movie_detail", source_site_id=movie.source_site_id) -%}
+{%- set thumb = movie.thumbnail_url|safe_href -%}
+<article class="card">
+  <a class="card__media media-frame{% if not thumb %} is-broken{% endif %}" href="{{ href }}" tabindex="-1" aria-hidden="true">
+    {% if thumb %}
+    <img src="{{ thumb }}" alt="" width="640" height="360" decoding="async" referrerpolicy="no-referrer"
+      {% if eager %}loading="eager" fetchpriority="high"{% else %}loading="lazy"{% endif %}>
+    {% endif %}
+    <span class="media-frame__fallback">{{ icon("image-off") }}</span>
+    <span class="card__stats">
+      <span class="stat-pill">{{ icon("eye") }}{{ movie.view_count|compact }}</span>
+      <span class="stat-pill">{{ icon("heart") }}{{ movie.favorite_count|compact }}</span>
+    </span>
+  </a>
+  <div class="card__body">
+    <{{ heading }} class="card__title"><a href="{{ href }}"{{ movie.title|lang_attr }}>{% if movie.title %}{{ movie.title|highlight(highlight_terms|default([])) }}{% else %}{{ tr("common.untitled") }}{% endif %}</a></{{ heading }}>
+    <p class="sr-only">{{ tr("card.stats", views=movie.view_count|number, favorites=movie.favorite_count|number) }}</p>
+    <p class="card__meta">
+      {% if movie.author_id is not none %}
+      <a class="card__author" href="/?author_any={{ movie.author_id }}">{{ movie.author_name }}</a>
+      {% elif movie.author_name %}
+      <span class="card__author">{{ movie.author_name }}</span>
+      {% endif %}
+      {% if movie.published_at %}
+      <time class="card__time" datetime="{{ movie.published_at|iso_datetime }}" title="{{ movie.published_at }}">{{ movie.published_at|reltime }}</time>
+      {% endif %}
+    </p>
+    {% if show_tags and movie.tags %}
+    <ul class="card__tags" aria-label="{{ tr('detail.tag') }}">
+      {% for tag in movie.tags[:3] %}
+      <li><a class="tag" href="/?tag_any={{ tag.id }}"{{ tag.name|lang_attr }}>{{ tag.name }}</a></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</article>
+{%- endmacro %}
+
+{% macro card_grid(movies, heading="h2", eager_count=0, show_tags=True, cls="") -%}
+<div class="card-grid{% if cls %} {{ cls }}{% endif %}">
+  {% for movie in movies %}
+  {{ card(movie, heading=heading, eager=loop.index <= eager_count, show_tags=show_tags) }}
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro pager(p) -%}
+{% if p.total > 1 %}
+<nav class="pager" aria-label="{{ tr('pagination.aria') }}">
+  {% if p.prev %}
+  <a class="pager__step" href="{{ p.prev }}" rel="prev">{{ icon("chevron-left") }}<span class="pager__step-label">{{ tr("pagination.prev") }}</span></a>
+  {% else %}
+  <span class="pager__step is-disabled" aria-hidden="true">{{ icon("chevron-left") }}<span class="pager__step-label">{{ tr("pagination.prev") }}</span></span>
+  {% endif %}
+  <ol class="pager__pages">
+    {% for item in p["items"] %}
+    {% if item.ellipsis %}
+    <li class="pager__gap" aria-hidden="true">…</li>
+    {% elif item.active %}
+    <li><a class="pager__page is-current" href="{{ item.href }}" aria-current="page"><span class="sr-only">{{ tr("pagination.page") }} </span>{{ item.page }}</a></li>
+    {% else %}
+    <li><a class="pager__page" href="{{ item.href }}"><span class="sr-only">{{ tr("pagination.page") }} </span>{{ item.page }}</a></li>
+    {% endif %}
+    {% endfor %}
+  </ol>
+  <span class="pager__summary">{{ tr("pagination.summary", current=p.current, total=p.total) }}</span>
+  {% if p.next %}
+  <a class="pager__step" href="{{ p.next }}" rel="next"><span class="pager__step-label">{{ tr("pagination.next") }}</span>{{ icon("chevron-right") }}</a>
+  {% else %}
+  <span class="pager__step is-disabled" aria-hidden="true"><span class="pager__step-label">{{ tr("pagination.next") }}</span>{{ icon("chevron-right") }}</span>
+  {% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}
+
+{#- Ranking side panels, rendered in the desktop sidebar and in the mobile drawer. -#}
+{% macro sidebar_sections(sidebar, id_prefix) -%}
+{% set sections = [
+  ("characters", "sidebar.characters", "/characters", "sparkles"),
+  ("authors", "sidebar.authors", "/authors", "user"),
+  ("categories", "sidebar.categories", "/categories", "layers"),
+] %}
+{% for key, label, more, icon_name in sections %}
+<div class="side-section">
+  <div class="side-section__head">
+    <h2 class="side-section__title" id="{{ id_prefix }}-{{ key }}">{{ icon(icon_name) }}{{ tr(label) }}</h2>
+    <a class="side-section__more" href="{{ more }}">{{ tr("sidebar.more") }}<span class="sr-only"> · {{ tr(label) }}</span></a>
+  </div>
+  {% set rows = sidebar[key] %}
+  {% if rows %}
+  <ol class="side-list">
+    {% for row in rows %}
+    <li>
+      <a class="side-list__link" href="/?{{ entity_search_param[row.kind] }}={{ row.source_id }}">
+        <span class="side-list__name">{{ row.name }}</span>
+        <span class="side-list__count" title="{{ tr('entity.movie_count', count=row.movie_count, shown=row.movie_count|number) }}">{{ row.movie_count|compact }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="side-section__empty">{{ tr("common.no_data") }}</p>
+  {% endif %}
+</div>
+{% endfor %}
+{%- endmacro %}
+
+{#- WAI-ARIA 1.2 combobox with a chip list; the hidden input carries the comma-separated ids. -#}
+{% macro combobox(group) -%}
+{% set base_id = "f-" ~ group.name %}
+<div class="combo{% if group.negative %} combo--negative{% endif %}" data-combobox data-api="{{ group.api }}">
+  <label class="field__label" for="{{ base_id }}">{{ tr("filter." ~ group.name ~ ".title") }}</label>
+  <p class="field__hint" id="{{ base_id }}-hint">{{ tr("filter." ~ group.name ~ ".desc") }}</p>
+  <input type="hidden" name="{{ group.name }}" value="{{ group.value }}" data-combo-value>
+  <ul class="chips" data-combo-chips aria-label="{{ tr('filter.selected') }}">
+    {% for item in group.selected %}
+    <li class="chip{% if group.negative %} chip--negative{% endif %}" data-id="{{ item.id }}">
+      <span class="chip__label">{{ item.name }}</span>
+      <button class="chip__remove" type="button" aria-label="{{ tr('common.remove', name=item.name) }}">{{ icon("x") }}</button>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="combo__field">
+    {{ icon("search", "combo__icon") }}
+    <input class="input combo__input" id="{{ base_id }}" type="text" role="combobox" autocomplete="off" spellcheck="false"
+      aria-autocomplete="list" aria-expanded="false" aria-controls="{{ base_id }}-list" aria-describedby="{{ base_id }}-hint"
+      placeholder="{{ tr('filter.' ~ group.name ~ '.placeholder') }}" maxlength="100">
+    <div class="combo__popup" hidden>
+      <ul class="combo__list" id="{{ base_id }}-list" role="listbox" aria-label="{{ tr('filter.' ~ group.name ~ '.title') }}"></ul>
+      <p class="combo__message"></p>
+    </div>
+  </div>
+</div>
+{%- endmacro %}

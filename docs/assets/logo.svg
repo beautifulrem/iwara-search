@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t">
+  <title id="t">Search Iwara</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d6146f"/>
+      <stop offset="0.55" stop-color="#e2345a"/>
+      <stop offset="1" stop-color="#f26a2c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.16" r="0.75">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+  <rect width="512" height="512" rx="116" fill="url(#glow)"/>
+  <g transform="translate(225.31 225.31) scale(1.1718)"><path d="M82.3 82.3 L147.4 147.4" stroke="#fff" stroke-width="46.0" stroke-linecap="round"/><path d="M0.0 -118.0 L118.0 0.0 L0.0 118.0 L-118.0 0.0 Z M0.0 -61.4 L-61.4 0.0 L0.0 61.4 L61.4 0.0 Z" fill="#fff" fill-opacity="0.8" fill-rule="evenodd"/><path d="M0.0 -118.0 L0.0 -61.4 L-61.4 0.0 L0.0 61.4 L0.0 118.0 L-118.0 0.0 Z" fill="#fff"/><path d="M-16.4 -16.7 Q-16.4 -22.7 -11.4 -19.7 L18.6 -3.0 Q23.6 0.0 18.6 3.0 L-11.4 19.7 Q-16.4 22.7 -16.4 16.7 Z" fill="#fff"/></g>
+</svg>

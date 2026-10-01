@@ -1,3 +1,3 @@
-__all__ = ["__version__"]
+"""Search Iwara — a local, searchable mirror of Oreno3D metadata."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "1"
+  PYTHONUNBUFFERED: "1"
+
+# Third-party actions are pinned to commit SHAs (tag in the trailing comment);
+# Dependabot's github-actions ecosystem keeps both up to date.
+
+jobs:
+  lint:
+    name: Lint & type-check (Python, JS, shell)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: JS type-check (tsc --checkJs)
+        run: npx --yes --package typescript@5.9 tsc -p jsconfig.json
+      - name: shellcheck
+        run: |
+          shellcheck -x deploy/linux/*.sh
+          shellcheck -s sh deploy/docker/*.sh
+
+  test:
+    name: Tests & coverage (≥ 95 %)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest -m "not slow and not e2e" -n auto --cov --cov-report=term --cov-report=xml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  performance:
+    name: Performance budgets (200k movies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest -m slow -p no:cacheprovider
+
+  e2e:
+    name: E2E & axe (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - run: uv sync --group e2e
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ matrix.browser }}-${{ hashFiles('uv.lock') }}
+      - run: uv run playwright install --with-deps ${{ matrix.browser }}
+      - run: >-
+          uv run pytest -m e2e -n auto --browser ${{ matrix.browser }}
+          --screenshot=only-on-failure --output=test-results
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: e2e-artifacts-${{ matrix.browser }}
+          path: test-results
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv export --no-dev --no-hashes --format requirements-txt > requirements.txt
+      - run: uvx --from pip-audit==2.10.1 pip-audit --strict --requirement requirements.txt
+
+  deploy-assets:
+    name: Deploy tooling & container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: deployment manager tests
+        run: uv run pytest tests/deploy
+      - name: Prometheus rules (promtool check + unit tests)
+        env:
+          PROMETHEUS_IMAGE: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+        run: |
+          docker run --rm -v "$PWD/deploy/prometheus:/rules" -w /rules --entrypoint promtool \
+            "$PROMETHEUS_IMAGE" check rules alerts.yml
+          docker run --rm -v "$PWD/deploy/prometheus:/rules" -w /rules --entrypoint promtool \
+            "$PROMETHEUS_IMAGE" test rules alerts.test.yml
+      - name: build image
+        run: docker build --tag search-iwara:ci .
+      - name: container health check
+        run: |
+          docker run -d --name si -p 8000:8000 search-iwara:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/readyz && exit 0
+            sleep 1
+          done
+          docker logs si
+          exit 1

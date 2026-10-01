@@ -1,0 +1,67 @@
+# Prometheus alerting rules for Search Iwara.
+#
+# Load with:
+#   rule_files:
+#     - /etc/prometheus/rules/search-iwara-alerts.yml
+# and validate with: promtool check rules deploy/prometheus/alerts.yml
+#
+# Scrape job name is assumed to be "search-iwara" (see docs/linux-deploy.md).
+# SearchIwaraSyncStale fires after two missed scheduled runs. It reads the interval from
+# search_iwara_sync_interval_seconds (exported from SEARCH_IWARA_SYNC_HOURS or
+# SEARCH_IWARA_SYNC_INTERVAL_SECONDS), so changing --sync-hours needs no edit here.
+groups:
+  - name: search-iwara
+    rules:
+      - alert: SearchIwaraDown
+        expr: up{job="search-iwara"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Search Iwara web service is down ({{ $labels.instance }})"
+          description: "Prometheus could not scrape /metrics for 5 minutes. Check `systemctl status search-iwara-web.service`."
+
+      - alert: SearchIwaraSyncStale
+        # Two scheduled intervals without success. The interval is exported by the app from
+        # SEARCH_IWARA_SYNC_HOURS (systemd) / SEARCH_IWARA_SYNC_INTERVAL_SECONDS (compose);
+        # 6h is assumed when neither is configured.
+        expr: >-
+          time() - search_iwara_last_sync_success_timestamp_seconds
+          > 2 * (search_iwara_sync_interval_seconds or on(instance, job) (search_iwara_movies * 0 + 21600))
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful sync for {{ $value | humanizeDuration }}"
+          description: "The metadata mirror is getting stale: the sync timer may be disabled or every run is failing. Check `systemctl list-timers search-iwara-sync.timer` and `journalctl -u search-iwara-sync.service`."
+
+      - alert: SearchIwaraSyncFailed
+        expr: search_iwara_last_sync_failed == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The most recent Search Iwara sync run failed"
+          description: "Exit code 2 means the site's markup changed (parser drift) and the parser needs an update; see docs/troubleshooting.md."
+
+      - alert: SearchIwaraThrottled
+        expr: search_iwara_last_sync_throttled > 10
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "The last sync received {{ $value }} HTTP 429/503 responses"
+          description: "oreno3d.com is throttling the crawler. Lower SEARCH_IWARA_REQUEST_RATE / SEARCH_IWARA_REQUEST_CONCURRENCY."
+
+      - alert: SearchIwaraHighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(search_iwara_http_request_duration_seconds_bucket{route!="/metrics"}[5m]))
+          ) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 request latency is {{ $value | humanizeDuration }}"
+          description: "Search pages are slow. Check disk I/O and the database size; see docs/troubleshooting.md."

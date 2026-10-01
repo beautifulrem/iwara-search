@@ -1,0 +1,79 @@
+# docker compose up -d   -> web UI on http://127.0.0.1:8000, periodic sync, daily backups
+#
+# Tunables (shell env or an .env file next to this file):
+#   SEARCH_IWARA_PORT                 host port for the UI (bound to 127.0.0.1)          [8000]
+#   SEARCH_IWARA_REQUEST_CONCURRENCY  crawler concurrency                                [4]
+#   SEARCH_IWARA_REQUEST_RATE         crawler requests/second ceiling                    [2.0]
+#   SEARCH_IWARA_PROXY                e.g. socks5://host.docker.internal:1080            [unset]
+#   SEARCH_IWARA_METRICS_TOKEN        bearer token for /metrics (the container binds
+#                                     0.0.0.0, so /metrics is off without a token)     [unset]
+#   SYNC_INTERVAL_SECONDS             seconds between `sync latest` runs (+0-10 min jitter) [21600]
+#   BACKUP_KEEP                       backups kept in the data volume                    [7]
+name: search-iwara
+
+x-app: &app
+  build: .
+  image: search-iwara:latest
+  environment: &env
+    SEARCH_IWARA_DB: /data/oreno3d.sqlite3
+    SEARCH_IWARA_BACKUP_DIR: /data/backups
+    SEARCH_IWARA_BACKUP_KEEP: ${BACKUP_KEEP:-7}
+    SEARCH_IWARA_LOG_FORMAT: json
+    SEARCH_IWARA_REQUEST_CONCURRENCY: ${SEARCH_IWARA_REQUEST_CONCURRENCY:-4}
+    SEARCH_IWARA_REQUEST_RATE: ${SEARCH_IWARA_REQUEST_RATE:-2.0}
+    # Empty values are ignored by the app (pydantic-settings env_ignore_empty).
+    SEARCH_IWARA_PROXY: ${SEARCH_IWARA_PROXY:-}
+    SEARCH_IWARA_METRICS_TOKEN: ${SEARCH_IWARA_METRICS_TOKEN:-}
+    # Exported as search_iwara_sync_interval_seconds for the staleness alert.
+    SEARCH_IWARA_SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-21600}
+  volumes:
+    - search-iwara-data:/data
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  web:
+    <<: *app
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SEARCH_IWARA_PORT:-8000}:8000"
+
+  sync:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      <<: *env
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-21600}
+      SYNC_JITTER_SECONDS: "600"
+    # Jittered loop; exit 2 (parser drift) stops syncing until the image is upgraded,
+    # see deploy/docker/sync-loop.sh.
+    command: ["sync-loop.sh"]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test ! -f /data/.sync-parser-drift"]
+      interval: 5m
+      start_period: 1m
+
+  backup:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      <<: *env
+      BACKUP_INTERVAL_SECONDS: "86400"
+      BACKUP_JITTER_SECONDS: "1800"
+    command: ["backup-loop.sh"]
+    healthcheck:
+      disable: true
+
+volumes:
+  search-iwara-data:

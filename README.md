@@ -1,285 +1,231 @@
+<div align="center">
+
+<img src="docs/assets/logo.svg" width="112" height="112" alt="Search Iwara logo">
+
 # Search Iwara
 
-English · [简体中文](./README.zh-CN.md)
+**Fast, faceted search for a local mirror of [Oreno3D](https://oreno3d.com/) metadata.**
 
-**Live demo (NSFW):** <https://zundamon.dpdns.org/>
+Find the MMD / 3D videos you want by title, author, character, origin and tag — with boolean
+filters, ranges and rankings the original site doesn't offer. Self-hosted, a single SQLite file.
 
-**Community:** [LINUX DO](https://linux.do/)
+[![CI](https://github.com/beautifulrem/iwara-search/actions/workflows/ci.yml/badge.svg)](https://github.com/beautifulrem/iwara-search/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/beautifulrem/iwara-search?color=d6146f&label=release)](https://github.com/beautifulrem/iwara-search/releases)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![mypy: strict](https://img.shields.io/badge/mypy-strict-2a6db2)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f2c94c)](LICENSE)
 
-![License: MIT](https://img.shields.io/badge/License-MIT-f2c94c?style=flat-square)
-![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)
-![Backend FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
-![Database SQLite + FTS5](https://img.shields.io/badge/Database-SQLite%20%2B%20FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)
+[**Live demo (NSFW)**](https://zundamon.dpdns.org/) ·
+[Quick start](#quick-start) ·
+[Deploy](docs/linux-deploy.md) ·
+[Architecture](docs/architecture.md) ·
+[简体中文](README.zh-CN.md) ·
+[LINUX DO](https://linux.do/)
 
-Local-first metadata mirror of [Oreno3D](https://oreno3d.com/) with advanced search and filtering capabilities.
+</div>
 
-**Warning:** The live demo links to adult-content metadata. Do not open it in public or work environments.
+> [!WARNING]
+> The indexed metadata and the live demo are **adult content**. Don't open them at work or in public.
+> This project downloads and hosts **no video files** — it only indexes publicly listed metadata.
 
-Crawls video metadata (title, author, tags, origins, characters, view/favorite counts, thumbnails, Iwara links) from Oreno3D and stores it in a local SQLite database. Provides a web UI for searching, filtering, and browsing — features the original site doesn't offer.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/home-dark.jpg">
+  <img alt="Search Iwara: the search page with rankings sidebar, sort tabs and a grid of results" src="docs/assets/screenshots/home-light.jpg">
+</picture>
+<sub>Screenshots use a made-up, work-safe demo catalogue with generated artwork — see <a href="scripts/make_screenshots.py"><code>scripts/make_screenshots.py</code></a>.</sub>
 
-**No video files are downloaded or hosted. This is a metadata search tool only.**
+## Highlights
 
-## Features
+- 🔎 **One box searches everything** — titles *and* author, character, origin and tag names, with
+  substring matching for Latin and CJK text; every query is answered from an index (FTS5 trigram + CJK n-grams).
+- 🧩 **Real filtering** — include/exclude authors, origins and characters; tags with *all / any / not*;
+  date, view and like ranges; every active filter is a removable chip.
+- 📈 **Eight sort orders & rankings** — trending, popular, most liked, newest (plus views and ascending
+  variants), weighted related videos, and leaderboards for characters, authors, tags and origins.
+- ✨ **A modern, accessible UI** — light/dark/system themes, keyboard-driven autocomplete, mobile
+  bottom sheets, works without JavaScript, 中文 / 日本語 / English. Checked with axe in three browsers.
+- 🤝 **A polite crawler** — robots.txt (RFC 9309), adaptive rate limiting, jittered retries that honour
+  `Retry-After`, proxy support, resumable full crawls and loud failure when the site's markup changes.
+- 🛠️ **Built to run unattended** — versioned migrations, online backups, JSON logs, health checks,
+  Prometheus metrics with alert rules, hardened systemd units and a Docker image.
 
-- **Full-text title search** (SQLite FTS5)
-- **Boolean entity filtering** — include/exclude by author, origin, character, tag (any/all/not)
-- **Range filters** — published date, view count, favorite count
-- **Four sort modes** matching the original site: Trending / Top Rated / Latest / Popular
-- **Related videos** on detail pages (weighted by shared author, characters, origins, tags)
-- **Three-state theme** — light / dark / follow system, with follow-system as default
-- **Popularity rankings** — sidebar with top characters, authors, and categories
-- **Entity browsing** — ranked lists for `/characters`, `/authors`, `/tags`, `/origins` with author video carousels
-- **Incremental & full sync** — resumable crawling with retry on failures
-- **Terminal progress bars** — page progress + detail fetch progress during sync
-- **Tunable concurrency** — request concurrency, prefetch window, and detail batch size are configurable
-- **Responsive design** — mobile sidebar, adaptive grid
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshots/filters-dark.jpg" alt="Filter panel with grouped include/exclude filters and selected chips"></td>
+    <td width="50%"><img src="docs/assets/screenshots/detail-light.jpg" alt="Video detail page with stats, metadata and links"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Grouped boolean filters with autocomplete</sub></td>
+    <td align="center"><sub>Detail page with metadata and related videos</sub></td>
+  </tr>
+</table>
 
-## Tech Stack
+<p align="center">
+  <img src="docs/assets/screenshots/mobile-dark.jpg" width="260" alt="Mobile search results with highlighted matches">
+  &nbsp;&nbsp;
+  <img src="docs/assets/screenshots/mobile-filters-light.jpg" width="260" alt="Mobile filter bottom sheet">
+</p>
 
-- Python 3.13, [uv](https://github.com/astral-sh/uv)
-- SQLite / FTS5
-- FastAPI + Jinja2
-- httpx + selectolax
-- Vanilla CSS (custom properties) + vanilla JS
+## Quick start
 
-## Quick Start
-
-### Install
+Requires Python 3.13 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
+git clone https://github.com/beautifulrem/iwara-search.git && cd iwara-search
 uv sync
+uv run search-iwara sync latest --max-pages 3   # fetch the newest movies (~1 minute)
+uv run search-iwara serve                       # → http://127.0.0.1:8000
 ```
 
-### Crawl some data
+Or with Docker (web UI, periodic sync and daily backups):
 
 ```bash
-# Quick test: grab the latest page only
-uv run search-iwara sync latest --stable-pages 1 --max-pages 1
-
-# Incremental sync: fetch new videos since last run
-uv run search-iwara sync latest
-
-# Full sync: crawl everything (resumable)
-uv run search-iwara sync full
-
-# Faster full sync (tune based on your network / remote site tolerance)
-uv run search-iwara sync full \
-  --request-concurrency 24 \
-  --request-delay-ms 0 \
-  --list-prefetch-pages 16 \
-  --detail-batch-size 192
+docker compose up -d                            # → http://127.0.0.1:8000
 ```
 
-### Start the web UI
+For a complete mirror run `uv run search-iwara sync full`. It is resumable: interrupt it any time
+and run it again to continue where it stopped.
 
-```bash
-uv run search-iwara serve
-# or specify a port
-uv run search-iwara serve --port 8765
-```
+> [!NOTE]
+> **Crawl responsibly.** The defaults — 4 concurrent requests, at most 2 requests/s, an honest
+> User-Agent, robots.txt respected, automatic slow-down on HTTP 429/503 — are deliberately gentle,
+> so a full crawl takes hours. Please keep it that way and follow the site's terms of use.
 
-Open `http://127.0.0.1:8000` (default) in your browser.
+## Usage
 
-## Linux Deployment
+<details>
+<summary><b>Command line</b></summary>
 
-This repo includes Linux deployment assets for:
+| Command | Purpose |
+|---|---|
+| `search-iwara sync latest [--stable-pages N] [--max-pages N]` | Incremental sync: stops after N pages without new movies |
+| `search-iwara sync full [--start-page N] [--max-pages N]` | Resumable crawl of the whole catalogue |
+| `search-iwara db migrate` | Create / upgrade the schema (idempotent) |
+| `search-iwara db backup [--dest DIR] [--keep N]` | Consistent online backup with rotation |
+| `search-iwara db refresh` | Recompute rankings and trending scores |
+| `search-iwara serve [--host] [--port] [--reload]` | Start the web UI |
 
-- `systemd` web service
-- `systemd` timer for `sync latest`
-- `nginx` reverse proxy to an existing domain
+Both sync commands accept `--request-concurrency` and `--request-rate`. Exit codes: `0` ok,
+`1` failures above tolerance or robots.txt unreachable, `2` the site's markup changed,
+`75` another sync is running, `78` invalid configuration, `143` stopped by SIGTERM (progress kept).
 
-Files live in [`deploy/linux`](./deploy/linux), with a full walkthrough in [docs/linux-deploy.md](./docs/linux-deploy.md).
+</details>
 
-If you want an interactive setup and maintenance flow instead of hand-editing files:
+<details>
+<summary><b>Search parameters & examples</b></summary>
 
-```bash
-sudo ./deploy/linux/manage.py
-```
+Every filter is a query parameter on `/`, so any search is a shareable URL.
 
-The manager script can detect install state, guide first-time setup, update sync defaults, run manual syncs, and manage nginx mode/domain/TLS paths.
+| Group | Parameters |
+|---|---|
+| Text | `q` (title and names, ≤ 200 chars), `title_mode=all\|any` |
+| Authors · Origins · Characters | `author_any` `author_not` · `origin_any` `origin_not` · `character_any` `character_not` |
+| Tags | `tag_all`, `tag_any`, `tag_not` |
+| Ranges | `published_from`, `published_to` (`YYYY-MM-DD`), `min_views`, `max_views`, `min_favorites`, `max_favorites` |
+| Sort | `sort=hot\|popularity\|favorites\|latest\|views`, or `…_desc` / `…_asc` variants |
+| Other | `page`, `lang=zh-Hans\|ja\|en` |
 
-Typical install on a Linux server:
-
-```bash
-sudo ./deploy/linux/install.sh \
-  --sync-hours 6
-```
-
-This installs:
-
-- `search-iwara-web.service`
-- `search-iwara-sync.service`
-- `search-iwara-sync.timer`
-- `uv` automatically if it is missing
-- a generic nginx site config you can adapt to your domain
-
-If you keep nginx mode enabled, the installer will also try to install `nginx` automatically when it is missing.
-
-If you only want to bind the app directly on a public port and skip nginx:
-
-```bash
-sudo ./deploy/linux/install.sh \
-  --skip-nginx \
-  --web-host 0.0.0.0 \
-  --web-port 8000
-```
-
-## Pages
-
-| Route | Description |
-|-------|-------------|
-| `/` | Search & browse with filters and sort tabs |
-| `/movies/{id}` | Video detail with metadata grid and related videos |
-| `/characters` | Character rankings with search links |
-| `/authors` | Author rankings with video carousels |
-| `/tags` | Tag rankings |
-| `/origins` | Origin/franchise rankings |
-
-## Crawl Speed Tuning
-
-The crawler is network-bound. It already uses async concurrency; by default it now runs with:
-
-- `request_concurrency = 12`
-- `request_delay_seconds = 0.05`
-- `listing_prefetch_pages = 8`
-- `detail_batch_size = 96`
-
-You can override these from the CLI:
-
-```bash
-uv run search-iwara sync full \
-  --request-concurrency 24 \
-  --request-delay-ms 0 \
-  --list-prefetch-pages 16 \
-  --detail-batch-size 192
-```
-
-Recommended approach:
-
-- Start with `--request-concurrency 24 --request-delay-ms 0`
-- If the site starts failing or slowing down, lower concurrency to `16`
-- Increase `--list-prefetch-pages` and `--detail-batch-size` only after request concurrency is stable
-
-## Crawl Progress Output
-
-Both sync commands show terminal progress bars:
-
-- **Page progress**
-  - `sync full`: current page / total pages
-  - `sync latest`: current page and stable-page stop state
-- **Detail progress**
-  - number of video detail pages fetched in the current batch
-
-Example:
-
-```text
-full page 53/8823
-pages 49-56 details
-```
-
-## Search Parameters
-
-All parameters are optional query strings on `/`.
-
-| Category | Parameters |
-|----------|-----------|
-| Title | `q`, `title_mode=all\|any` |
-| Author | `author_any`, `author_not` |
-| Origin | `origin_any`, `origin_not` |
-| Character | `character_any`, `character_not` |
-| Tag | `tag_all`, `tag_any`, `tag_not` |
-| Date range | `published_from`, `published_to` |
-| View range | `min_views`, `max_views` |
-| Favorite range | `min_favorites`, `max_favorites` |
-| Sort | `sort=hot\|favorites\|latest\|popularity\|views_desc\|...` |
-
-### Examples
+Id lists are comma-separated source ids (≤ 20 per parameter).
 
 ```
-/?q=Yelan&title_mode=all
-/?author_any=4972&sort=hot
-/?origin_any=276&character_any=1470
-/?tag_any=2,3&tag_not=84
+/?q=Yelan                                   title or names contain "Yelan"
+/?author_any=4972&sort=hot                  one author, trending first
+/?origin_any=276&character_any=1470         an origin and a character
+/?tag_any=2,3&tag_not=84                    either tag, but never tag 84
 /?min_views=1000&min_favorites=100&sort=popularity
 ```
 
-## Scoring & Rankings
+</details>
 
-All rankings are computed from **locally crawled data only** and do not represent the original site's full rankings.
+<details>
+<summary><b>Scoring</b></summary>
 
-| Mode | Formula |
-|------|---------|
-| Top Rated | `favorite_count DESC` |
-| Latest | `published_at DESC` |
-| Popular | `view_count + favorite_count * 50` |
-| Trending | `(view_count + favorite_count * 50) / (hours_since_publish + 6)` |
+Rankings are computed from **your local data**, not the site's global rankings.
 
-### Related Videos Algorithm
+| Order | Formula |
+|---|---|
+| Most liked | `favorite_count DESC` |
+| Newest | `published_at DESC` |
+| Popular | `view_count + favorite_count × 50` |
+| Trending | `popularity / (hours since publish + 6)`, refreshed after each sync |
 
-Each video on the detail page shows up to 12 related videos, scored by:
+**Related videos** (up to 12): same author +10, each shared character or origin +5, each shared tag +1;
+ties broken by popularity. Entities attached to more than 5 % of the catalogue are ignored.
 
-| Dimension | Weight |
-|-----------|--------|
-| Same author | +10 |
-| Each shared character | +5 |
-| Each shared origin | +5 |
-| Each shared tag | +1 |
+</details>
 
-Ties are broken by popularity score.
+## How it works
 
-## Database
-
-Default path: `data/oreno3d.sqlite3`
-
-Override with environment variable:
-
-```bash
-SEARCH_IWARA_DB=/path/to/custom.sqlite3 uv run search-iwara serve
+```mermaid
+flowchart LR
+    site[(oreno3d.com)] -->|polite crawler| sync[sync pipeline]
+    sync -->|group commits| db[(SQLite · WAL<br/>FTS5 · read models)]
+    db -->|read-only pool| web[FastAPI + Jinja]
+    web --> you([browser])
 ```
+
+A batch crawler and a web app share one SQLite database — no queue, search engine or cache server
+to operate. Listing pages and detail pages flow through a bounded pipeline with group commits;
+rankings are precomputed read models; every query shape is served by an index. The full story —
+schema, sync algorithm, politeness and security model — is in [docs/architecture.md](docs/architecture.md).
+
+## Deployment
+
+| Target | How |
+|---|---|
+| Linux server | `sudo ./deploy/linux/install.sh --sync-hours 6` — systemd units (hardened), nginx, backups, alerts. Or the interactive `sudo ./deploy/linux/manage.py`. → [docs/linux-deploy.md](docs/linux-deploy.md) |
+| Docker | `docker compose up -d` → [docs/linux-deploy.md#docker](docs/linux-deploy.md#docker) |
+| Configuration | every setting is a `SEARCH_IWARA_*` variable → [docs/configuration.md](docs/configuration.md) |
+| Monitoring | `/healthz`, `/readyz`, `/metrics` + [Prometheus alert rules](deploy/prometheus/alerts.yml) |
+| Troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
 
 ## Development
 
 ```bash
-# Install with dev dependencies
-uv sync --extra dev
-
-# Run tests
-uv run --extra dev pytest
-
-# Quick crawl + serve for manual testing
-uv run search-iwara sync latest --stable-pages 1 --max-pages 1
-uv run search-iwara serve --port 8765
+uv sync && uv run pre-commit install
+make check   # ruff · mypy --strict · tsc --checkJs · tests with a 95 % coverage gate
+make perf    # latency budgets on a 200 000-movie synthetic database
+make e2e     # Playwright end-to-end + axe accessibility tests
+make serve   # dev server with auto-reload on :8765
 ```
 
-### Project Structure
+<details>
+<summary><b>Project layout</b></summary>
 
 ```
 search_iwara/
-  cli.py          # Typer CLI: sync full, sync latest, serve
-  services.py     # Sync orchestration, prefetch, detail batching, progress events
-  crawler.py      # Async HTTP to oreno3d.com (rate limiting, retries)
-  parsers.py      # HTML -> structured fields via selectolax
-  db.py           # SQLite schema, upserts, FTS5 search, rankings
-  models.py       # Dataclass models
-  config.py       # Settings (DB path, concurrency, delay, batch sizes)
-  web.py          # FastAPI routes
-  utils.py        # URL parsing, formatting, pagination helpers
-  static/
-    style.css     # Light/dark theme with CSS custom properties
-    app.js        # Theme toggle, filter panel, autocomplete chips
-  templates/
-    base.html     # Layout: header, sidebar, theme toggle
-    index.html    # Search page with sort tabs and collapsible filters
-    movie_detail.html  # Detail page with related videos
-    entity_index.html  # Entity ranking pages
-tests/
-  test_parsers.py
-  test_repository.py
-  test_web.py
+  cli.py               Typer CLI (sync, db, serve) with stable exit codes
+  config.py            Validated settings (SEARCH_IWARA_* environment variables)
+  crawler.py           Polite HTTP client: robots.txt, adaptive rate limit, retries
+  parsers.py           HTML → models, URL allow-list, parser-drift detection
+  services.py          Sync pipeline: listing scan → detail workers → group commits
+  storage/             SQLite: migrations, write model, FTS maintenance, read models
+  web/                 FastAPI app, pages, API, ops endpoints, security & metrics middleware
+  templates/, static/  Jinja templates, CSS, ES modules, icons
+  i18n.py, locales/    Translations (zh-Hans, ja, en) and language negotiation
+tests/                 Unit, property, integration, snapshot, performance and browser tests
+deploy/                systemd, nginx, deployment manager, Docker helpers, Prometheus rules
+scripts/               Regenerate the logo/icons and the README screenshots
+docs/                  Architecture, configuration, deployment, accessibility, troubleshooting
 ```
+
+</details>
+
+## Contributing
+
+Issues and pull requests are welcome — please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+Security problems: see [SECURITY.md](SECURITY.md). Accessibility scope and known limits:
+[docs/accessibility.md](docs/accessibility.md). Release notes: [CHANGELOG.md](CHANGELOG.md).
+
+## Acknowledgements
+
+- [Oreno3D](https://oreno3d.com/) and [Iwara](https://www.iwara.tv/) and their creators — all metadata and thumbnails belong to their respective owners.
+- Built with [FastAPI](https://fastapi.tiangolo.com/), [SQLite FTS5](https://www.sqlite.org/fts5.html), [HTTPX](https://www.python-httpx.org/), [selectolax](https://github.com/rushter/selectolax), [Typer](https://typer.tiangolo.com/) and [uv](https://github.com/astral-sh/uv).
+- The faceted-lens logo is an original mark that nods to the angular, low-poly symbols of 3D/MMD culture.
+  This project is not affiliated with or endorsed by Oreno3D or Iwara.
 
 ## License
 
-This project is licensed under the MIT License.
-
-See [LICENSE](./LICENSE).
+[MIT](LICENSE)

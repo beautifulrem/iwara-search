@@ -1,117 +1,178 @@
+{% import "_macros.html" as ui with context %}
 <!doctype html>
-<html lang="{{ html_lang }}">
+<html lang="{{ html_lang }}" class="no-js" data-theme-pref="system">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{{ tr("brand") }}{% endblock %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=brightness_auto,dark_mode,emoji_events,favorite,fiber_new,light_mode,menu,remove_red_eye,trending_up,tune" rel="stylesheet">
-  <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}?v={{ static_version }}">
-  <script>
-    (function(){
-      var t = localStorage.getItem('theme');
-      if (t === 'dark' || t === 'light') {
-        document.documentElement.setAttribute('data-theme', t);
-      } else {
-        document.documentElement.removeAttribute('data-theme');
-      }
-    })();
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{ page_title }}</title>
+  <meta name="description" content="{{ meta_description }}">
+  <meta name="robots" content="{{ robots }}">
+  <meta name="color-scheme" content="light dark">
+  <meta name="darkreader-lock">
+  <meta name="theme-color" content="#f8f8fb" media="(prefers-color-scheme: light)" data-theme-color="light">
+  <meta name="theme-color" content="#101015" media="(prefers-color-scheme: dark)" data-theme-color="dark">
+  <link rel="canonical" href="{{ canonical_url }}">
+  {% for alt in alternates %}
+  <link rel="alternate" hreflang="{{ alt.hreflang }}" href="{{ alt.href }}">
+  {% endfor %}
+  <link rel="alternate" hreflang="x-default" href="{{ x_default_url | default(canonical_url) }}">
+  <meta property="og:site_name" content="{{ tr('brand') }}">
+  <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ meta_description }}">
+  <meta property="og:url" content="{{ canonical_url }}">
+  <meta property="og:locale" content="{{ html_lang|replace('-', '_') }}">
+  {% set og_image_href = og_image|safe_href if og_image else "" %}
+  {% if og_image_href %}
+  <meta property="og:image" content="{{ og_image_href }}">
+  <meta name="twitter:card" content="summary_large_image">
+  {% endif %}
+  <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="{{ static_url('icon-192.png') }}" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="{{ static_url('apple-touch-icon.png') }}">
+  <link rel="manifest" href="{{ static_url('manifest.webmanifest') }}">
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+  <script src="{{ static_url('theme-init.js') }}"></script>
+  <script type="module" src="{{ static_url('app.js') }}"></script>
 </head>
 <body
-  data-delete-label="{{ tr('common.delete') }}"
-  data-theme-system-label="{{ tr('theme.system') }}"
-  data-theme-dark-label="{{ tr('theme.dark') }}"
-  data-theme-light-label="{{ tr('theme.light') }}"
->
+  data-i18n-loading="{{ tr('combo.loading') }}"
+  data-i18n-empty="{{ tr('combo.empty') }}"
+  data-i18n-results-one="{{ tr('combo.results', count=1, n='{n}') }}"
+  data-i18n-results-other="{{ tr('combo.results', count=2, n='{n}') }}"
+  data-i18n-added="{{ tr('combo.added') }}"
+  data-i18n-removed="{{ tr('combo.removed') }}"
+  data-i18n-remove="{{ tr('common.remove') }}"
+  data-i18n-copied="{{ tr('common.copied') }}"
+  data-i18n-theme-system="{{ tr('theme.system') }}"
+  data-i18n-theme-dark="{{ tr('theme.dark') }}"
+  data-i18n-theme-light="{{ tr('theme.light') }}">
+  <a class="skip-link" href="#main">{{ tr("a11y.skip") }}</a>
+  <div class="nav-progress" aria-hidden="true"></div>
+
   <header class="site-header">
-    <div class="site-header__inner">
-      <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="{{ tr('header.toggle_menu') }}">
-        <span class="material-symbols-outlined">menu</span>
+    <div class="site-header__inner container">
+      <button class="icon-btn site-header__menu js-only" type="button" data-dialog-open="drawer" aria-controls="drawer" aria-expanded="false" aria-haspopup="dialog">
+        {{ ui.icon("menu") }}<span class="sr-only">{{ tr("header.menu") }}</span>
       </button>
-      <a class="site-title" href="/">{{ tr("brand") }}</a>
-      <form class="header-search" method="get" action="/">
-        <input type="text" name="q" placeholder="{{ tr('header.search_placeholder') }}" value="{{ request.query_params.get('q', '') }}">
-        {% for name in [
-          'title_mode',
-          'author_any',
-          'author_not',
-          'origin_any',
-          'origin_not',
-          'character_any',
-          'character_not',
-          'tag_all',
-          'tag_any',
-          'tag_not',
-          'published_from',
-          'published_to',
-          'min_views',
-          'max_views',
-          'min_favorites',
-          'max_favorites',
-          'sort',
-          'lang',
-        ] %}
-          {% set value = request.query_params.get(name) %}
-          {% if value %}
-            <input type="hidden" name="{{ name }}" value="{{ value }}">
-          {% endif %}
+      <a class="brand" href="/">
+        <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="28" height="28">
+        <span class="brand__name">Search<span class="brand__accent">Iwara</span></span>
+        <span class="sr-only"> · {{ tr("header.home") }}</span>
+      </a>
+
+      <form class="search" role="search" action="/" method="get" data-busy-form>
+        <label class="sr-only" for="site-search">{{ tr("header.search_label") }}</label>
+        {{ ui.icon("search", "search__icon") }}
+        <input class="search__input" id="site-search" type="search" name="q" value="{{ header_query }}"
+          placeholder="{{ tr('header.search_placeholder') }}" autocomplete="off" enterkeyhint="search" maxlength="200"
+          aria-keyshortcuts="/">
+        {% for key, value in header_hidden.items() %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
         {% endfor %}
-        <button type="submit">{{ tr('header.search_submit') }}</button>
+        <kbd class="search__kbd" aria-hidden="true">/</kbd>
+        <button class="search__submit" type="submit">{{ ui.icon("arrow-right") }}<span class="sr-only">{{ tr("header.search_submit") }}</span></button>
       </form>
-      <nav class="site-nav">
-        <a href="/characters">{{ tr('header.nav.characters') }}</a>
-        <a href="/authors">{{ tr('header.nav.authors') }}</a>
-        <a href="/tags">{{ tr('header.nav.tags') }}</a>
-        <a href="/origins">{{ tr('header.nav.origins') }}</a>
+
+      <nav class="site-nav" aria-label="{{ tr('nav.aria') }}">
+        {% for key, label in [("characters", "nav.characters"), ("authors", "nav.authors"), ("tags", "nav.tags"), ("origins", "nav.origins")] %}
+        <a class="site-nav__link" href="/{{ key }}"{% if nav == key %} aria-current="page"{% endif %}>{{ tr(label) }}</a>
+        {% endfor %}
       </nav>
-      <a class="locale-toggle" href="{{ switch_lang_href }}" aria-label="{{ tr('header.toggle_lang') }}">{{ switch_lang_label }}</a>
-      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="{{ tr('header.toggle_theme') }}" title="{{ tr('header.toggle_theme') }}">
-        <span class="material-symbols-outlined">brightness_auto</span>
-      </button>
+
+      <div class="site-header__tools">
+        <details class="menu" data-menu>
+          <summary class="icon-btn" aria-label="{{ tr('header.language') }}">
+            {{ ui.icon("globe") }}<span class="menu__current" aria-hidden="true">{% for language in languages if language.active %}{{ language.code.split('-')[0]|upper }}{% endfor %}</span>
+          </summary>
+          <ul class="menu__list">
+            {% for language in languages %}
+            <li>
+              <a class="menu__item" href="{{ language.href }}" lang="{{ language.html_lang }}" hreflang="{{ language.html_lang }}"{% if language.active %} aria-current="true"{% endif %}>
+                {{ language.label }}{% if language.active %}{{ ui.icon("check", "menu__check") }}{% endif %}
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+        <button class="icon-btn js-only" type="button" data-theme-toggle aria-label="{{ tr('theme.system') }}" title="{{ tr('theme.system') }}">
+          {{ ui.icon("monitor", "theme-icon theme-icon--system") }}
+          {{ ui.icon("moon", "theme-icon theme-icon--dark") }}
+          {{ ui.icon("sun", "theme-icon theme-icon--light") }}
+        </button>
+      </div>
     </div>
   </header>
-  <div class="site-layout">
-    <aside class="sidebar" id="sidebar">
-      {% if sidebar is defined and sidebar %}
-      <section class="sidebar-section">
-        <h3 class="sidebar-section__title"><span>{{ tr('sidebar.characters') }}</span><a href="/characters">{{ tr('sidebar.more') }}</a></h3>
-        <ul class="sidebar-list">
-          {% for item in sidebar.characters %}
-          <li><a href="/?character_any={{ item.source_id }}">{{ item.name }}</a></li>
-          {% endfor %}
-        </ul>
-      </section>
-      <section class="sidebar-section">
-        <h3 class="sidebar-section__title"><span>{{ tr('sidebar.authors') }}</span><a href="/authors">{{ tr('sidebar.more') }}</a></h3>
-        <ul class="sidebar-list">
-          {% for item in sidebar.authors %}
-          <li><a href="/?author_any={{ item.source_id }}">{{ item.name }}</a></li>
-          {% endfor %}
-        </ul>
-      </section>
-      <section class="sidebar-section">
-        <h3 class="sidebar-section__title"><span>{{ tr('sidebar.categories') }}</span><a href="/categories">{{ tr('sidebar.more') }}</a></h3>
-        <ul class="sidebar-list">
-          {% for item in sidebar.categories %}
-          <li>
-            {% if item.kind == 'tags' %}
-            <a href="/?tag_any={{ item.source_id }}">{{ item.name }}</a>
-            {% else %}
-            <a href="/?origin_any={{ item.source_id }}">{{ item.name }}</a>
-            {% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-      </section>
-      {% endif %}
+
+  <div class="layout container{% if sidebar %} layout--with-sidebar{% endif %}">
+    {% if sidebar %}
+    <aside class="sidebar" aria-label="{{ tr('sidebar.aria') }}">
+      {{ ui.sidebar_sections(sidebar, "side") }}
     </aside>
-    <div class="sidebar-overlay" id="sidebar-overlay"></div>
-    <main class="main-content">
+    {% endif %}
+    <main class="main" id="main" tabindex="-1">
       {% block content %}{% endblock %}
     </main>
   </div>
-  <script defer src="{{ request.url_for('static', path='app.js') }}?v={{ static_version }}"></script>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <div class="site-footer__brand">
+        <a class="brand brand--small" href="/">
+          <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="22" height="22">
+          <span class="brand__name">Search<span class="brand__accent">Iwara</span></span>
+        </a>
+        <p class="site-footer__disclaimer">{{ tr("footer.disclaimer") }}</p>
+      </div>
+      <nav class="site-footer__nav" aria-label="{{ tr('footer.nav') }}">
+        {% for key in ["characters", "authors", "tags", "origins", "categories"] %}
+        <a href="/{{ key }}">{{ tr("entity." ~ key) }}</a>
+        {% endfor %}
+      </nav>
+      <div class="site-footer__meta">
+        {% if dataset %}
+        <p class="site-footer__status">
+          {{ ui.icon("database") }}
+          <span>
+            {{ tr("footer.movies", count=dataset.movie_count, shown=dataset.movie_count|number) }}
+            ·
+            {% if dataset.last_success_at %}
+            {{ tr("footer.updated") }} <time datetime="{{ dataset.last_success_at }}">{{ dataset.last_success_at|timestamp }}</time>
+            {% else %}
+            {{ tr("footer.never_synced") }}
+            {% endif %}
+          </span>
+        </p>
+        {% endif %}
+        <p>
+          <a href="https://github.com/beautifulrem/iwara-search" target="_blank" rel="noopener noreferrer">GitHub{{ ui.icon("external") }}{{ ui.external_hint() }}</a>
+          · v{{ app_version }}
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <dialog class="drawer" id="drawer" aria-labelledby="drawer-title">
+    <div class="drawer__head">
+      <a class="brand" href="/" id="drawer-title">
+        <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="28" height="28">
+        <span class="brand__name">Search<span class="brand__accent">Iwara</span></span>
+      </a>
+      <button class="icon-btn" type="button" data-dialog-close>{{ ui.icon("x") }}<span class="sr-only">{{ tr("common.close") }}</span></button>
+    </div>
+    <nav class="drawer__nav" aria-label="{{ tr('nav.aria') }}">
+      <a class="drawer__link" href="/"{% if nav == "search" %} aria-current="page"{% endif %}>{{ ui.icon("home") }}{{ tr("nav.home") }}</a>
+      {% for key, label, icon_name in [("characters", "nav.characters", "sparkles"), ("authors", "nav.authors", "user"), ("tags", "nav.tags", "tag"), ("origins", "nav.origins", "book"), ("categories", "entity.categories", "layers")] %}
+      <a class="drawer__link" href="/{{ key }}"{% if nav == key %} aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}{{ tr(label) }}</a>
+      {% endfor %}
+    </nav>
+    {% if sidebar %}
+    <div class="drawer__sections">
+      {{ ui.sidebar_sections(sidebar, "drawer") }}
+    </div>
+    {% endif %}
+  </dialog>
+
+  <div class="sr-only" aria-live="polite" aria-atomic="true" id="live-region"></div>
 </body>
 </html>

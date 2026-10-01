@@ -1,19 +1,26 @@
+# __MANAGED_MARKER__
 [Unit]
 Description=Search Iwara web application
+Documentation=file://__APP_DIR__/docs/linux-deploy.md
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure=search-iwara-alert@%n.service
 
 [Service]
 Type=simple
 User=__SERVICE_USER__
 Group=__SERVICE_GROUP__
-WorkingDirectory=__APP_DIR__
+WorkingDirectory=__DATA_DIR__
 EnvironmentFile=__ENV_FILE__
+Environment=HOME=__DATA_DIR__
+ExecStartPre=__APP_DIR__/.venv/bin/search-iwara db migrate
 ExecStart=/usr/bin/env bash __APP_DIR__/deploy/linux/run-web.sh
-Restart=always
+Restart=on-failure
 RestartSec=5
-NoNewPrivileges=true
-PrivateTmp=true
+TimeoutStopSec=20
+__HARDENING__
 
 [Install]
 WantedBy=multi-user.target

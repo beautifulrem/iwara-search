@@ -1,0 +1,46 @@
+# promtool test rules deploy/prometheus/alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Interval exported (1 h): stale after 2 h without success.
+  - interval: 1m
+    input_series:
+      - series: 'search_iwara_last_sync_success_timestamp_seconds{instance="a",job="search-iwara"}'
+        values: '0x240'
+      - series: 'search_iwara_sync_interval_seconds{instance="a",job="search-iwara"}'
+        values: '3600x240'
+      - series: 'search_iwara_movies{instance="a",job="search-iwara"}'
+        values: '100x240'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: SearchIwaraSyncStale
+        exp_alerts: []
+      - eval_time: 180m
+        alertname: SearchIwaraSyncStale
+        exp_alerts:
+          - exp_labels: {severity: warning, instance: a, job: search-iwara}
+            exp_annotations:
+              summary: "No successful sync for 3h 0m 0s"
+              description: "The metadata mirror is getting stale: the sync timer may be disabled or every run is failing. Check `systemctl list-timers search-iwara-sync.timer` and `journalctl -u search-iwara-sync.service`."
+
+  # No interval exported: the 6 h default applies (stale after 12 h).
+  - interval: 1m
+    input_series:
+      - series: 'search_iwara_last_sync_success_timestamp_seconds{instance="b",job="search-iwara"}'
+        values: '0x800'
+      - series: 'search_iwara_movies{instance="b",job="search-iwara"}'
+        values: '100x800'
+    alert_rule_test:
+      - eval_time: 180m
+        alertname: SearchIwaraSyncStale
+        exp_alerts: []
+      - eval_time: 780m
+        alertname: SearchIwaraSyncStale
+        exp_alerts:
+          - exp_labels: {severity: warning, instance: b, job: search-iwara}
+            exp_annotations:
+              summary: "No successful sync for 13h 0m 0s"
+              description: "The metadata mirror is getting stale: the sync timer may be disabled or every run is failing. Check `systemctl list-timers search-iwara-sync.timer` and `journalctl -u search-iwara-sync.service`."

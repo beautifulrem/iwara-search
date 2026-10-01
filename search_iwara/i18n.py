@@ -1,233 +1,98 @@
+"""Locale catalogs (``locales/<code>.toml``), language negotiation and translation."""
+
 from __future__ import annotations
 
-from collections.abc import Mapping
+import tomllib
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
+from typing import Final
+
+LOCALES_DIR: Final = Path(__file__).resolve().parent / "locales"
+DEFAULT_LANG: Final = "zh-Hans"
 
 
-DEFAULT_LANG = "zh-Hans"
-SUPPORTED_LANGS = ("zh-Hans", "ja")
+@dataclass(frozen=True, slots=True)
+class Language:
+    code: str  # our catalog code, also used for ?lang=
+    html_lang: str  # BCP 47 tag for <html lang> / hreflang
+    label: str  # endonym shown in the language menu
+    prefixes: tuple[str, ...]  # Accept-Language primary tags that map here
 
 
-TRANSLATIONS: dict[str, dict[str, str]] = {
-    "zh-Hans": {
-        "brand": "Search Iwara",
-        "header.search_placeholder": "搜索标题、作者、原作、角色",
-        "header.search_submit": "搜索",
-        "header.nav.characters": "角色",
-        "header.nav.authors": "作者",
-        "header.nav.tags": "标签",
-        "header.nav.origins": "原作",
-        "header.toggle_menu": "菜单",
-        "header.toggle_theme": "切换主题",
-        "header.toggle_lang": "切换到日文",
-        "header.switch_lang": "日本語",
-        "theme.system": "跟随系统",
-        "theme.dark": "深色",
-        "theme.light": "浅色",
-        "sidebar.characters": "热门角色",
-        "sidebar.authors": "热门作者",
-        "sidebar.categories": "热门分类",
-        "sidebar.more": "更多",
-        "sidebar.local_aggregate": "本地聚合",
-        "sort.hot": "飙升",
-        "sort.favorites": "高赞",
-        "sort.latest": "最新",
-        "sort.popularity": "热门",
-        "sort.filter": "筛选",
-        "filter.author_any.title": "作者包含任一",
-        "filter.author_any.desc": "命中任意一个作者即可。",
-        "filter.author_any.placeholder": "搜索作者名",
-        "filter.author_not.title": "作者排除",
-        "filter.author_not.desc": "排除这些作者的作品。",
-        "filter.author_not.placeholder": "排除作者",
-        "filter.origin_any.title": "原作包含任一",
-        "filter.origin_any.desc": "命中任意一个原作即可。",
-        "filter.origin_any.placeholder": "搜索原作",
-        "filter.origin_not.title": "原作排除",
-        "filter.origin_not.desc": "排除这些原作。",
-        "filter.origin_not.placeholder": "排除原作",
-        "filter.character_any.title": "角色包含任一",
-        "filter.character_any.desc": "命中任意一个角色即可。",
-        "filter.character_any.placeholder": "搜索角色",
-        "filter.character_not.title": "角色排除",
-        "filter.character_not.desc": "排除这些角色。",
-        "filter.character_not.placeholder": "排除角色",
-        "filter.tag_all.title": "Tag 全含",
-        "filter.tag_all.desc": "结果必须同时具备这些 Tag。",
-        "filter.tag_all.placeholder": "必须具备的 Tag",
-        "filter.tag_any.title": "Tag 任一",
-        "filter.tag_any.desc": "命中任意一个 Tag 即可。",
-        "filter.tag_any.placeholder": "任选 Tag",
-        "filter.tag_not.title": "Tag 排除",
-        "filter.tag_not.desc": "排除具备这些 Tag 的作品。",
-        "filter.tag_not.placeholder": "排除 Tag",
-        "filter.metrics.title": "时间与热度",
-        "filter.metrics.desc": "按发布日期、浏览数、点赞数做范围筛选。",
-        "filter.metrics.published_from": "发布时间从",
-        "filter.metrics.published_to": "发布时间到",
-        "filter.metrics.min_views": "最少浏览",
-        "filter.metrics.max_views": "最多浏览",
-        "filter.metrics.min_favorites": "最少点赞",
-        "filter.metrics.max_favorites": "最多点赞",
-        "filter.metrics.min_views_placeholder": "例如 1000",
-        "filter.metrics.max_views_placeholder": "例如 50000",
-        "filter.metrics.min_favorites_placeholder": "例如 100",
-        "filter.metrics.max_favorites_placeholder": "例如 10000",
-        "filter.submit": "搜索",
-        "filter.clear": "清空筛选",
-        "results.count": "{count} 个结果",
-        "results.empty.title": "没有命中结果",
-        "results.empty.body": "可以放宽标题条件，或者减少作者 / Tag 的排除规则。",
-        "pagination.aria": "分页",
-        "detail.breadcrumb.home": "首页",
-        "detail.breadcrumb.video": "视频",
-        "detail.views": "{count} 浏览",
-        "detail.favorites": "{count} 点赞",
-        "detail.status.active": "可用",
-        "detail.status.missing": "缺失",
-        "detail.open_iwara": "打开 Iwara",
-        "detail.open_oreno3d": "打开 Oreno3D",
-        "detail.back_search": "返回搜索",
-        "detail.creator": "作者",
-        "detail.origin": "原作",
-        "detail.character": "角色",
-        "detail.tag": "标签",
-        "detail.related": "相关视频",
-        "detail.no_image": "无图",
-        "entity.authors": "热门作者",
-        "entity.characters": "热门角色",
-        "entity.tags": "热门标签",
-        "entity.origins": "热门原作",
-        "entity.categories": "热门分类",
-        "entity.open": "查看作品",
-        "entity.movie_count": "{count} 部",
-        "entity.movie_count_and_favorites": "{count} 部 · {favorites} ♥",
-        "common.delete": "删除",
-        "common.no_image": "无图",
-    },
-    "ja": {
-        "brand": "Search Iwara",
-        "header.search_placeholder": "タイトル、作者、原作、キャラを検索",
-        "header.search_submit": "検索",
-        "header.nav.characters": "キャラ",
-        "header.nav.authors": "作者",
-        "header.nav.tags": "タグ",
-        "header.nav.origins": "原作",
-        "header.toggle_menu": "メニュー",
-        "header.toggle_theme": "テーマ切替",
-        "header.toggle_lang": "中国語に切り替え",
-        "header.switch_lang": "中文",
-        "theme.system": "システム",
-        "theme.dark": "ダーク",
-        "theme.light": "ライト",
-        "sidebar.characters": "人気キャラ",
-        "sidebar.authors": "人気作者",
-        "sidebar.categories": "人気カテゴリ",
-        "sidebar.more": "もっと見る",
-        "sidebar.local_aggregate": "ローカル集計",
-        "sort.hot": "急上昇",
-        "sort.favorites": "高評価",
-        "sort.latest": "新着",
-        "sort.popularity": "人気",
-        "sort.filter": "フィルター",
-        "filter.author_any.title": "作者を含む",
-        "filter.author_any.desc": "指定した作者のいずれかに一致。",
-        "filter.author_any.placeholder": "作者を検索",
-        "filter.author_not.title": "作者を除外",
-        "filter.author_not.desc": "指定した作者の作品を除外。",
-        "filter.author_not.placeholder": "除外する作者",
-        "filter.origin_any.title": "原作を含む",
-        "filter.origin_any.desc": "指定した原作のいずれかに一致。",
-        "filter.origin_any.placeholder": "原作を検索",
-        "filter.origin_not.title": "原作を除外",
-        "filter.origin_not.desc": "指定した原作を除外。",
-        "filter.origin_not.placeholder": "除外する原作",
-        "filter.character_any.title": "キャラを含む",
-        "filter.character_any.desc": "指定したキャラのいずれかに一致。",
-        "filter.character_any.placeholder": "キャラを検索",
-        "filter.character_not.title": "キャラを除外",
-        "filter.character_not.desc": "指定したキャラを除外。",
-        "filter.character_not.placeholder": "除外するキャラ",
-        "filter.tag_all.title": "タグをすべて含む",
-        "filter.tag_all.desc": "指定したタグをすべて持つ作品。",
-        "filter.tag_all.placeholder": "必須タグ",
-        "filter.tag_any.title": "タグをいずれか含む",
-        "filter.tag_any.desc": "指定したタグのいずれかに一致。",
-        "filter.tag_any.placeholder": "タグを検索",
-        "filter.tag_not.title": "タグを除外",
-        "filter.tag_not.desc": "指定したタグを持つ作品を除外。",
-        "filter.tag_not.placeholder": "除外するタグ",
-        "filter.metrics.title": "日時と人気指標",
-        "filter.metrics.desc": "公開日、再生数、いいね数で絞り込み。",
-        "filter.metrics.published_from": "公開日（開始）",
-        "filter.metrics.published_to": "公開日（終了）",
-        "filter.metrics.min_views": "再生数（最小）",
-        "filter.metrics.max_views": "再生数（最大）",
-        "filter.metrics.min_favorites": "いいね数（最小）",
-        "filter.metrics.max_favorites": "いいね数（最大）",
-        "filter.metrics.min_views_placeholder": "例 1000",
-        "filter.metrics.max_views_placeholder": "例 50000",
-        "filter.metrics.min_favorites_placeholder": "例 100",
-        "filter.metrics.max_favorites_placeholder": "例 10000",
-        "filter.submit": "検索",
-        "filter.clear": "条件をクリア",
-        "results.count": "{count} 件",
-        "results.empty.title": "一致する結果がありません",
-        "results.empty.body": "タイトル条件を緩めるか、除外条件を減らしてください。",
-        "pagination.aria": "ページネーション",
-        "detail.breadcrumb.home": "ホーム",
-        "detail.breadcrumb.video": "動画",
-        "detail.views": "{count} 回視聴",
-        "detail.favorites": "{count} いいね",
-        "detail.status.active": "利用可能",
-        "detail.status.missing": "欠落",
-        "detail.open_iwara": "Iwara を開く",
-        "detail.open_oreno3d": "Oreno3D を開く",
-        "detail.back_search": "検索に戻る",
-        "detail.creator": "作成者",
-        "detail.origin": "原作",
-        "detail.character": "キャラ",
-        "detail.tag": "タグ",
-        "detail.related": "関連動画",
-        "detail.no_image": "画像なし",
-        "entity.authors": "人気作者",
-        "entity.characters": "人気キャラ",
-        "entity.tags": "人気タグ",
-        "entity.origins": "人気原作",
-        "entity.categories": "人気カテゴリ",
-        "entity.open": "作品を見る",
-        "entity.movie_count": "{count} 本",
-        "entity.movie_count_and_favorites": "{count} 本 · {favorites} ♥",
-        "common.delete": "削除",
-        "common.no_image": "画像なし",
-    },
-}
+LANGUAGES: Final[tuple[Language, ...]] = (
+    Language("zh-Hans", "zh-Hans", "简体中文", ("zh",)),
+    Language("ja", "ja", "日本語", ("ja",)),
+    Language("en", "en", "English", ("en",)),
+)
+SUPPORTED_LANGS: Final = tuple(language.code for language in LANGUAGES)
+LANGUAGE_BY_CODE: Final = {language.code: language for language in LANGUAGES}
+
+Translator = Callable[..., str]
 
 
-def resolve_lang(lang_param: str | None, cookie_lang: str | None) -> str:
-    if lang_param in SUPPORTED_LANGS:
-        return lang_param
-    if cookie_lang in SUPPORTED_LANGS:
-        return cookie_lang
-    return DEFAULT_LANG
+@cache
+def catalog(lang: str) -> Mapping[str, str]:
+    with (LOCALES_DIR / f"{lang}.toml").open("rb") as handle:
+        data = tomllib.load(handle)
+    return {str(key): str(value) for key, value in data.items()}
+
+
+def negotiate(accept_language: str | None) -> str | None:
+    """Pick the best supported language from an ``Accept-Language`` header."""
+
+    if not accept_language:
+        return None
+    candidates: list[tuple[float, int, str]] = []
+    for index, part in enumerate(accept_language.split(",")):
+        tag, _, params = part.strip().partition(";")
+        quality = 1.0
+        if params.strip().startswith("q="):
+            try:
+                quality = float(params.strip()[2:])
+            except ValueError:
+                quality = 0.0
+        primary = tag.strip().lower().split("-")[0]
+        candidates.extend(
+            (quality, -index, language.code)
+            for language in LANGUAGES
+            if primary in language.prefixes and quality > 0
+        )
+    return max(candidates)[2] if candidates else None
+
+
+def resolve_lang(lang_param: str | None, cookie_lang: str | None, accept_language: str | None = None) -> str:
+    for candidate in (lang_param, cookie_lang):
+        if candidate in LANGUAGE_BY_CODE:
+            return candidate
+    return negotiate(accept_language) or DEFAULT_LANG
+
+
+def plural_category(lang: str, count: int) -> str:
+    """CLDR cardinal category; Chinese and Japanese have no grammatical plural."""
+
+    if lang == "en":
+        return "one" if count == 1 else "other"
+    return "other"
 
 
 def translate(lang: str, key: str, **kwargs: object) -> str:
-    catalog = TRANSLATIONS.get(lang, TRANSLATIONS[DEFAULT_LANG])
-    text = catalog.get(key, TRANSLATIONS[DEFAULT_LANG].get(key, key))
-    if kwargs:
-        return text.format(**kwargs)
-    return text
+    """Look up ``key``; with an integer ``count`` prefer ``key#one`` / ``key#other`` forms."""
+
+    candidates = [key]
+    count = kwargs.get("count")
+    if isinstance(count, int) and not isinstance(count, bool):
+        candidates = [f"{key}#{plural_category(lang, count)}", f"{key}#other", key]
+    for source in (catalog(lang), catalog(DEFAULT_LANG)):
+        for candidate in candidates:
+            if candidate in source:
+                text = source[candidate]
+                return text.format(**kwargs) if kwargs else text
+    return key
 
 
-def switch_lang(lang: str) -> str:
-    return "ja" if lang != "ja" else "zh-Hans"
-
-
-def html_lang(lang: str) -> str:
-    return "ja" if lang == "ja" else "zh-Hans"
-
-
-def build_translator(lang: str):
+def build_translator(lang: str) -> Translator:
     def _tr(key: str, **kwargs: object) -> str:
         return translate(lang, key, **kwargs)
 

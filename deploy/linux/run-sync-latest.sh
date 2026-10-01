@@ -1,30 +1,16 @@
 #!/usr/bin/env bash
+# Started by search-iwara-sync.service. Crawler settings (concurrency, rate,
+# proxy, log format) are read by the app from SEARCH_IWARA_* variables; only
+# the sync-latest specific options are mapped to CLI flags here.
+# Exit codes: 0 ok, 1 too many failures, 2 parser drift, 75 lock held.
 set -euo pipefail
+# shellcheck source=deploy/linux/common.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
+require_app_bin
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="${APP_DIR:-$(cd -- "${SCRIPT_DIR}/../.." && pwd)}"
-UV_BIN="${UV_BIN:-uv}"
-
-cmd=(
-  "${UV_BIN}" run search-iwara sync latest
-  --stable-pages "${SEARCH_IWARA_STABLE_PAGES:-3}"
-)
-
+args=(sync latest --stable-pages "${SEARCH_IWARA_STABLE_PAGES:-3}")
 if [[ -n "${SEARCH_IWARA_MAX_PAGES:-}" ]]; then
-  cmd+=(--max-pages "${SEARCH_IWARA_MAX_PAGES}")
-fi
-if [[ -n "${SEARCH_IWARA_REQUEST_CONCURRENCY:-}" ]]; then
-  cmd+=(--request-concurrency "${SEARCH_IWARA_REQUEST_CONCURRENCY}")
-fi
-if [[ -n "${SEARCH_IWARA_REQUEST_DELAY_MS:-}" ]]; then
-  cmd+=(--request-delay-ms "${SEARCH_IWARA_REQUEST_DELAY_MS}")
-fi
-if [[ -n "${SEARCH_IWARA_LIST_PREFETCH_PAGES:-}" ]]; then
-  cmd+=(--list-prefetch-pages "${SEARCH_IWARA_LIST_PREFETCH_PAGES}")
-fi
-if [[ -n "${SEARCH_IWARA_DETAIL_BATCH_SIZE:-}" ]]; then
-  cmd+=(--detail-batch-size "${SEARCH_IWARA_DETAIL_BATCH_SIZE}")
+  args+=(--max-pages "${SEARCH_IWARA_MAX_PAGES}")
 fi
 
-cd "${APP_DIR}"
-exec "${cmd[@]}"
+exec "${SEARCH_IWARA_BIN}" "${args[@]}"

@@ -6,3 +6,13 @@ __pycache__/
 data/
 docs/screenshots/
 search_iwara.egg-info/
+.coverage
+coverage.xml
+htmlcov/
+test-results/
+.ruff_cache/
+.mypy_cache/
+*.sync.lock
+*.partial
+.env
+node_modules/

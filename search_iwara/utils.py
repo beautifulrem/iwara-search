@@ -1,18 +1,21 @@
+"""Small, dependency-free helpers shared across layers."""
+
 from __future__ import annotations
 
 import math
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from typing import Any
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlsplit
 
-
-BASE_URL = "https://oreno3d.com"
 MOVIE_ID_RE = re.compile(r"/movies/(\d+)")
 ENTITY_ID_RE = re.compile(r"/(?:authors|tags|origins|characters)/(\d+)")
-PAGE_RE = re.compile(r"[?&]page=(\d+)")
+MAX_SAFE_INTEGER = 2**53 - 1
+QUERY_TOKEN_SPLIT_RE = re.compile(r"[\s,，、]+")
+# str.isdigit() accepts "²" or "٣", which int() then rejects — only ASCII digits are ids/numbers.
+ASCII_DIGITS_RE = re.compile(r"[0-9]+")
+DECIMAL_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 
 
 def utc_now() -> str:
@@ -27,10 +30,54 @@ def clean_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", normalized).strip()
 
 
-def absolute_url(value: str | None) -> str | None:
+# Backslash escapes left in descriptions by the source site (JSON newlines, PHP addslashes).
+SOURCE_ESCAPE_RE = re.compile(r"\\(r\\n|n|['\"\\])")
+
+
+def decode_source_escapes(value: str) -> str:
+    """``\\n`` / ``\\r\\n`` -> newline, ``\\'`` ``\\"`` ``\\\\`` -> the character (single pass)."""
+
+    return SOURCE_ESCAPE_RE.sub(
+        lambda match: "\n" if match.group(1) in ("n", "r\\n") else match.group(1), value
+    )
+
+
+def clean_multiline(value: str | None) -> str:
+    """Like :func:`clean_text` but keeps line breaks and decodes the source's escapes."""
+
+    if not value:
+        return ""
+    normalized = decode_source_escapes(unicodedata.normalize("NFKC", value))
+    lines = (re.sub(r"[^\S\n]+", " ", line).strip() for line in normalized.replace("\u200b", "").splitlines())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def absolute_url(value: str | None, base_url: str) -> str | None:
     if not value:
         return None
-    return urljoin(BASE_URL, value)
+    return urljoin(base_url + "/", value.strip())
+
+
+def safe_url(value: str | None, allowed_hosts: Iterable[str]) -> str | None:
+    """Return ``value`` only if it is an ``https`` URL on an allowed host (or a subdomain).
+
+    This is the single choke point that stops scraped ``javascript:``/``data:`` links or
+    look-alike hosts from ever being stored or rendered as ``href``/``src`` attributes.
+    """
+
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value.strip())
+    except ValueError:
+        return None
+    if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+        return None
+    host = parts.hostname.lower().rstrip(".")
+    for allowed in (item.lower() for item in allowed_hosts):
+        if host == allowed or host.endswith("." + allowed):
+            return parts.geturl()
+    return None
 
 
 def parse_compact_number(value: str | None) -> int | None:
@@ -41,15 +88,14 @@ def parse_compact_number(value: str | None) -> int | None:
         return None
     multiplier = 1
     if text.endswith("k"):
-        multiplier = 1_000
-        text = text[:-1]
+        multiplier, text = 1_000, text[:-1]
     elif text.endswith("m"):
-        multiplier = 1_000_000
-        text = text[:-1]
-    try:
-        return int(float(text) * multiplier)
-    except ValueError:
+        multiplier, text = 1_000_000, text[:-1]
+    # Only plain decimals: float() would also accept "inf", "nan", "1e999" or "١٢".
+    if not DECIMAL_RE.fullmatch(text):
         return None
+    number = float(text) * multiplier
+    return int(number) if number <= MAX_SAFE_INTEGER else None
 
 
 def extract_movie_id(url: str) -> int:
@@ -67,69 +113,47 @@ def extract_entity_id(url: str) -> int:
 
 
 def split_query_tokens(value: str) -> list[str]:
-    return [token for token in re.split(r"[\s,，]+", clean_text(value)) if token]
-
-
-def fts_query_from_text(value: str, mode: str) -> str | None:
-    tokens = split_query_tokens(value)
-    if not tokens:
-        return None
-    joiner = " OR " if mode == "any" else " AND "
-    return joiner.join(f'"{token.replace("\"", "\"\"")}"' for token in tokens)
+    return [token for token in QUERY_TOKEN_SPLIT_RE.split(clean_text(value)) if token]
 
 
 def escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def parse_csv_ids(value: str | None) -> list[int]:
+def parse_csv_ids(value: str | None, *, limit: int) -> list[int]:
+    """Parse ``"1,2,x,2"`` into ``[1, 2]``: invalid parts are dropped, order kept, capped."""
+
     if not value:
         return []
     seen: set[int] = set()
     result: list[int] = []
-    for part in value.split(","):
-        part = part.strip()
-        if not part:
+    for raw in value.split(","):
+        part = raw.strip()
+        if not ASCII_DIGITS_RE.fullmatch(part):
             continue
-        try:
-            item = int(part)
-        except ValueError:
+        item = int(part)
+        if item > MAX_SAFE_INTEGER or item in seen:
             continue
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
+        seen.add(item)
+        result.append(item)
+        if len(result) >= limit:
+            break
     return result
 
 
-def parse_optional_int(value: str | None) -> int | None:
+def parse_bounded_int(value: str | None, *, low: int = 0, high: int = MAX_SAFE_INTEGER) -> int | None:
+    """Parse a non-negative integer and clamp it into ``[low, high]``; junk becomes ``None``."""
+
     if value is None:
         return None
-    stripped = value.strip()
-    if not stripped:
+    stripped = value.strip().replace(",", "")
+    if not ASCII_DIGITS_RE.fullmatch(stripped):
         return None
-    try:
-        return int(stripped)
-    except ValueError:
-        return None
-
-
-def chunked(items: Iterable[Any], size: int) -> list[list[Any]]:
-    bucket: list[Any] = []
-    chunks: list[list[Any]] = []
-    for item in items:
-        bucket.append(item)
-        if len(bucket) == size:
-            chunks.append(bucket)
-            bucket = []
-    if bucket:
-        chunks.append(bucket)
-    return chunks
+    return min(max(int(stripped[:20]), low), high)
 
 
 def page_count(total: int, page_size: int) -> int:
-    if total <= 0:
-        return 1
-    return math.ceil(total / page_size)
+    return 1 if total <= 0 else math.ceil(total / page_size)
 
 
 def pagination_window(current: int, total: int, radius: int = 2) -> list[int | None]:
@@ -147,7 +171,7 @@ def pagination_window(current: int, total: int, radius: int = 2) -> list[int | N
     return pages
 
 
-def update_query_params(current: dict[str, str], **updates: Any) -> str:
+def update_query_params(current: Mapping[str, str], **updates: object) -> str:
     params = dict(current)
     for key, value in updates.items():
         if value in ("", None, [], ()):
@@ -157,18 +181,5 @@ def update_query_params(current: dict[str, str], **updates: Any) -> str:
     return urlencode(params)
 
 
-def format_number(value: int | None) -> str:
-    if value is None:
-        return "0"
-    return f"{value:,}"
-
-
-def resolve_page_from_url(url: str) -> int | None:
-    query = dict(parse_qsl(urlparse(url).query))
-    raw = query.get("page")
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        return None
+def href_with_query(path: str, query: str) -> str:
+    return f"{path}?{query}" if query else path

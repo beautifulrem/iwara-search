@@ -1,0 +1,12 @@
+# __MANAGED_MARKER__
+[Unit]
+Description=Daily Search Iwara database backup
+
+[Timer]
+OnCalendar=__BACKUP_ON_CALENDAR__
+RandomizedDelaySec=30min
+Persistent=true
+Unit=search-iwara-backup.service
+
+[Install]
+WantedBy=timers.target

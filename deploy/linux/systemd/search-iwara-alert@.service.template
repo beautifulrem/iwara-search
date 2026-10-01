@@ -1,0 +1,16 @@
+# __MANAGED_MARKER__
+# Started via OnFailure=search-iwara-alert@%n.service; %i is the failed unit.
+[Unit]
+Description=Search Iwara failure alert for %i
+
+[Service]
+Type=oneshot
+User=__SERVICE_USER__
+Group=__SERVICE_GROUP__
+WorkingDirectory=__DATA_DIR__
+EnvironmentFile=-__ENV_FILE__
+Environment=HOME=__DATA_DIR__
+ExecStart=/usr/bin/env bash __APP_DIR__/deploy/linux/run-alert.sh %i
+SyslogLevelPrefix=true
+TimeoutStartSec=30s
+__HARDENING__

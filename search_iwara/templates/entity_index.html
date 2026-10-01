@@ -1,85 +1,71 @@
 {% extends "base.html" %}
 
-{% block title %}{{ entity_title }} · {{ tr("brand") }}{% endblock %}
-
 {% block content %}
-  <h1 style="margin:0 0 16px; font-size:1.4rem;">{{ entity_title }}</h1>
-
-  {% if entity_kind == 'authors' %}
-    {% for item in items %}
-      <div class="author-entry">
-        <div class="author-entry__header">
-          <span class="author-entry__rank">#{{ loop.index + (page - 1) * 60 }}</span>
-          <span class="author-entry__name">{{ item.name }}</span>
-          <span style="font-size:0.82rem; color:var(--text-secondary);">{{ tr("entity.movie_count_and_favorites", count=item.movie_count, favorites=item.total_favorites_display) }}</span>
-          <a class="btn btn--ghost" href="{{ search_href(author_any=item.source_id) }}">{{ tr("entity.open") }}</a>
-        </div>
-        {% if author_movies is defined and author_movies.get(item.source_id) %}
-          <div class="author-carousel">
-            {% for mv in author_movies.get(item.source_id, []) %}
-              <article class="video-card">
-                <a class="video-card__cover" href="{{ request.url_for('movie_detail', source_site_id=mv.source_site_id) }}">
-                  {% if mv.thumbnail_url %}
-                    <img src="{{ mv.thumbnail_url }}" alt="{{ mv.title }}" loading="lazy">
-                  {% else %}
-                    <div class="video-card__placeholder">{{ tr("common.no_image") }}</div>
-                  {% endif %}
-                  <div class="video-card__stats">
-                    <span><span class="material-symbols-outlined">remove_red_eye</span>{{ mv.view_count_display }}</span>
-                    <span><span class="material-symbols-outlined">favorite</span>{{ mv.favorite_count_display }}</span>
-                  </div>
-                </a>
-                <div class="video-card__body">
-                  <h3 class="video-card__title"><a href="{{ request.url_for('movie_detail', source_site_id=mv.source_site_id) }}">{{ mv.title }}</a></h3>
-                </div>
-              </article>
-            {% endfor %}
-          </div>
-        {% endif %}
-      </div>
-    {% endfor %}
-  {% else %}
-    <div class="entity-list">
-      {% for item in items %}
-        <div class="entity-row">
-          <span class="entity-row__rank">#{{ loop.index + (page - 1) * 60 }}</span>
-          <span class="entity-row__name">
-            {% if entity_kind == 'characters' %}
-              <a href="{{ search_href(character_any=item.source_id) }}">{{ item.name }}</a>
-            {% elif entity_kind == 'categories' %}
-              {% if item.kind == 'tags' %}
-                <a href="{{ search_href(tag_any=item.source_id) }}">{{ item.name }}</a>
-              {% else %}
-                <a href="{{ search_href(origin_any=item.source_id) }}">{{ item.name }}</a>
-              {% endif %}
-            {% elif entity_kind == 'tags' %}
-              <a href="{{ search_href(tag_any=item.source_id) }}">{{ item.name }}</a>
-            {% else %}
-              <a href="{{ search_href(origin_any=item.source_id) }}">{{ item.name }}</a>
-            {% endif %}
-          </span>
-          <span class="entity-row__stat">
-            {{ tr("entity.movie_count_and_favorites", count=item.movie_count, favorites=item.total_favorites_display) }}
-            {% if entity_kind == 'categories' %}
-              · {{ item.label }}
-            {% endif %}
-          </span>
-        </div>
-      {% endfor %}
+{% set icons = {"characters": "sparkles", "authors": "user", "tags": "tag", "origins": "book", "categories": "layers"} %}
+<section class="rankings" aria-labelledby="rank-title">
+  <header class="page-head">
+    <div class="page-head__icon">{{ ui.icon(icons[entity_kind]) }}</div>
+    <div>
+      <h1 class="page-head__title" id="rank-title">{{ tr("entity." ~ entity_kind) }}</h1>
+      <p class="page-head__sub">{{ tr("entity.subtitle", count=total, shown=total|number) }}</p>
     </div>
+  </header>
+
+  {% if not items %}
+  <div class="empty-state">
+    <div class="empty-state__icon">{{ ui.icon(icons[entity_kind]) }}</div>
+    <h2>{{ tr("entity.empty.title") }}</h2>
+    <p>{{ tr("entity.empty.body") }}</p>
+    <div class="empty-state__actions"><a class="btn btn--secondary" href="/">{{ tr("results.empty.browse_all") }}</a></div>
+  </div>
+  {% elif entity_kind == "authors" %}
+  <ol class="author-list">
+    {% for item in items %}
+    {% set movies = author_movies.get(item.source_id, []) %}
+    <li class="author-row" aria-labelledby="author-{{ item.source_id }}">
+      <div class="author-row__head">
+        <span class="rank-badge{% if rank_offset + loop.index <= 3 %} rank-badge--top{% endif %}">{{ rank_offset + loop.index }}</span>
+        <div class="author-row__who">
+          <h2 class="author-row__name" id="author-{{ item.source_id }}"><a href="{{ item_href(item) }}"{{ item.name|lang_attr }}>{{ item.name }}</a></h2>
+          <p class="author-row__stats">
+            <span>{{ tr("entity.movie_count", count=item.movie_count, shown=item.movie_count|number) }}</span>
+            <span>{{ ui.icon("heart") }}{{ item.total_favorites|compact }}</span>
+            <span>{{ ui.icon("eye") }}{{ item.total_views|compact }}</span>
+          </p>
+        </div>
+        <a class="btn btn--secondary btn--sm" href="{{ item_href(item) }}">{{ tr("entity.open") }}<span class="sr-only"> · {{ item.name }}</span>{{ ui.icon("chevron-right") }}</a>
+      </div>
+      {% if movies %}
+      <div class="rail" role="region" aria-label="{{ tr('entity.works_of', name=item.name) }}" tabindex="0">
+        {% for movie in movies %}
+        {{ ui.card(movie, heading="h3", show_tags=False) }}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  {% set top = items|map(attribute="popularity")|max %}
+  <ol class="rank-list">
+    {% for item in items %}
+    {% set rank = rank_offset + loop.index %}
+    <li class="rank-row">
+      <span class="rank-badge{% if rank <= 3 %} rank-badge--top{% endif %}">{{ rank }}</span>
+      <div class="rank-row__main">
+        <a class="rank-row__name" href="{{ item_href(item) }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
+        <meter class="rank-row__meter" min="0" max="{{ [top, 1]|max }}" value="{{ item.popularity }}" aria-label="{{ tr('entity.popularity') }}">{{ item.popularity }}</meter>
+      </div>
+      <div class="rank-row__stats">
+        {% if entity_kind == "categories" %}<span class="kind-badge">{{ tr("entity.kind." ~ item.kind) }}</span>{% endif %}
+        <span title="{{ tr('entity.movie_count', count=item.movie_count, shown=item.movie_count|number) }}">{{ tr("entity.movie_count", count=item.movie_count, shown=item.movie_count|compact) }}</span>
+        <span class="rank-row__fav">{{ ui.icon("heart") }}{{ item.total_favorites|compact }}</span>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
   {% endif %}
 
-  {% if page_count > 1 %}
-    <nav class="pagination" aria-label="{{ tr('pagination.aria') }}">
-      {% for item in pagination_items %}
-        {% if item.ellipsis %}
-          <span class="pagination__ellipsis">&hellip;</span>
-        {% elif item.active %}
-          <span class="pagination__item pagination__item--active">{{ item.page }}</span>
-        {% else %}
-          <a class="pagination__item" href="{{ item.href }}">{{ item.page }}</a>
-        {% endif %}
-      {% endfor %}
-    </nav>
-  {% endif %}
+  {{ ui.pager(pagination) }}
+</section>
 {% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="error-page" aria-labelledby="error-title">
+  <p class="error-page__code" aria-hidden="true">{{ status_code }}</p>
+  <h1 class="error-page__title" id="error-title">{{ tr("error." ~ error_kind ~ ".title") }}</h1>
+  <p class="error-page__body">{{ tr("error." ~ error_kind ~ ".body") }}</p>
+  <form class="error-page__search search search--inline" role="search" action="/" method="get">
+    <label class="sr-only" for="error-search">{{ tr("header.search_label") }}</label>
+    {{ ui.icon("search", "search__icon") }}
+    <input class="search__input" id="error-search" type="search" name="q" placeholder="{{ tr('header.search_placeholder') }}" maxlength="200">
+    <button class="search__submit" type="submit">{{ ui.icon("arrow-right") }}<span class="sr-only">{{ tr("header.search_submit") }}</span></button>
+  </form>
+  <div class="error-page__actions">
+    <a class="btn btn--primary" href="/">{{ ui.icon("home") }}<span>{{ tr("error.home") }}</span></a>
+  </div>
+</section>
+{% endblock %}

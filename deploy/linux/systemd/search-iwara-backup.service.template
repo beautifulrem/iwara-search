@@ -1,0 +1,19 @@
+# __MANAGED_MARKER__
+# Triggered by search-iwara-backup.timer; intentionally has no [Install] section.
+[Unit]
+Description=Search Iwara SQLite online backup
+Documentation=file://__APP_DIR__/docs/linux-deploy.md
+OnFailure=search-iwara-alert@%n.service
+
+[Service]
+Type=oneshot
+User=__SERVICE_USER__
+Group=__SERVICE_GROUP__
+WorkingDirectory=__DATA_DIR__
+EnvironmentFile=__ENV_FILE__
+Environment=HOME=__DATA_DIR__
+ExecStart=/usr/bin/env bash __APP_DIR__/deploy/linux/run-backup.sh
+TimeoutStartSec=1h
+Nice=15
+IOSchedulingClass=idle
+__HARDENING__

@@ -1,18 +1,24 @@
+# __MANAGED_MARKER__
+# Triggered by search-iwara-sync.timer; intentionally has no [Install] section.
 [Unit]
-Description=Search Iwara incremental sync
+Description=Search Iwara incremental metadata sync
+Documentation=file://__APP_DIR__/docs/linux-deploy.md
 After=network-online.target
 Wants=network-online.target
+OnFailure=search-iwara-alert@%n.service
 
 [Service]
 Type=oneshot
 User=__SERVICE_USER__
 Group=__SERVICE_GROUP__
-WorkingDirectory=__APP_DIR__
+WorkingDirectory=__DATA_DIR__
 EnvironmentFile=__ENV_FILE__
+Environment=HOME=__DATA_DIR__
 ExecStart=/usr/bin/env bash __APP_DIR__/deploy/linux/run-sync-latest.sh
+# Exit 75 (EX_TEMPFAIL): another sync holds the lock. Not a failure.
+# Exit 1 (too many failed items) and 2 (parser drift) fail the unit and alert.
+SuccessExitStatus=75
+TimeoutStartSec=6h
 Nice=10
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
+IOSchedulingClass=idle
+__HARDENING__

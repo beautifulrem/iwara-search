@@ -1,0 +1,11 @@
+{
+  "name": "search-iwara-frontend-checks",
+  "private": true,
+  "description": "Type-checks the dependency-free browser scripts in search_iwara/static (no build step).",
+  "scripts": {
+    "typecheck": "tsc -p jsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
