@@ -61,3 +61,41 @@ def test_systemctl_value_is_empty_when_unavailable(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(subprocess, "run", missing)
     assert shell.systemctl_value("x.service", "User") == ""
     assert shell.systemctl_state("x.service") == ("unknown", "unknown")
+
+
+def _debian_layout(tmp_path):  # type: ignore[no-untyped-def]
+    from search_iwara_deploy.config import Paths
+
+    available, enabled = tmp_path / "sites-available", tmp_path / "sites-enabled"
+    available.mkdir()
+    enabled.mkdir()
+    (available / "default").write_text("server { listen 80 default_server; }")
+    (enabled / "default").symlink_to(available / "default")
+    paths = Paths(
+        env_file=tmp_path / "env",
+        systemd_dir=tmp_path / "systemd",
+        nginx_site=available / "search-iwara.conf",
+        nginx_enabled=enabled / "search-iwara.conf",
+    )
+    return paths, enabled / "default"
+
+
+def test_catch_all_install_disables_the_stock_default_site(tmp_path):  # type: ignore[no-untyped-def]
+    paths, default_link = _debian_layout(tmp_path)
+    result = system.disable_stock_default_site(make_config(server_name="_"), paths)
+    assert result is not None
+    assert not default_link.exists()
+    assert (tmp_path / "sites-available" / "default").exists()  # file kept for re-enabling
+
+
+def test_named_site_or_custom_default_is_left_alone(tmp_path):  # type: ignore[no-untyped-def]
+    paths, default_link = _debian_layout(tmp_path)
+    assert system.disable_stock_default_site(make_config(server_name="search.example.com"), paths) is None
+    assert default_link.is_symlink()
+    default_link.unlink()
+    custom = tmp_path / "elsewhere" / "default"
+    custom.parent.mkdir()
+    custom.write_text("server {}")
+    default_link.symlink_to(custom)
+    assert system.disable_stock_default_site(make_config(server_name="_"), paths) is None
+    assert default_link.is_symlink()

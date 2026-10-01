@@ -161,3 +161,11 @@ def test_parse_nginx_version_and_upstream_host():
     assert render.upstream_host("::") == "[::1]"
     assert render.upstream_host("fd00::1") == "[fd00::1]"
     assert render.upstream_host("10.0.0.2") == "10.0.0.2"
+
+
+def test_catch_all_site_is_the_default_server():
+    text = render.render_nginx_config(make_config(server_name="_", tls_mode="http"), (1, 22, 1))
+    assert "listen 80 default_server;" in text
+    assert "listen [::]:80 default_server;" in text
+    named = render.render_nginx_config(make_config(tls_mode="http"), (1, 22, 1))
+    assert "default_server" not in named

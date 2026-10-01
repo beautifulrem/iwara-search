@@ -121,9 +121,18 @@ def hsts_header(config: DeployConfig, indent: str) -> str:
     )
 
 
+def is_catch_all(config: DeployConfig) -> bool:
+    """No domain configured: the site must answer requests for any host (e.g. the bare IP)."""
+
+    return config.server_name in {"", "_"}
+
+
 def listen_directives(config: DeployConfig, nginx_version: tuple[int, ...] | None) -> str:
     if config.tls_mode != "https":
-        return "    listen 80;\n    listen [::]:80;"
+        # Without a domain the site must be nginx's default server, or the distribution's
+        # "Welcome to nginx" site keeps answering requests for the IP address.
+        default = " default_server" if is_catch_all(config) else ""
+        return f"    listen 80{default};\n    listen [::]:80{default};"
     if nginx_version is None or nginx_version >= HTTP2_DIRECTIVE_MIN_NGINX:
         return "    listen 443 ssl;\n    listen [::]:443 ssl;\n    http2 on;"
     return "    listen 443 ssl http2;\n    listen [::]:443 ssl http2;"

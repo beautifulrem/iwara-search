@@ -28,6 +28,7 @@ from .render import (
     BACKUP_SERVICE,
     SYNC_SERVICE,
     TIMER_UNITS,
+    is_catch_all,
     parse_nginx_version,
     render_nginx_config,
     render_units,
@@ -208,6 +209,24 @@ def remove_nginx_site(paths: Paths) -> None:
         reload_nginx()
 
 
+def disable_stock_default_site(config: DeployConfig, paths: Paths) -> tuple[Path, Path] | None:
+    """Debian/Ubuntu enable a "Welcome to nginx" default_server; in catch-all mode it would
+    shadow this site. Disable it (only the sites-enabled link; the file stays for re-enabling).
+    Returns (link, target) so a failed `nginx -t` can restore it."""
+
+    if paths.nginx_enabled is None or not is_catch_all(config):
+        return None
+    link = paths.nginx_enabled.parent / "default"
+    if not link.is_symlink():
+        return None
+    target = Path(os.readlink(link))
+    if target.name != "default" or target.parent.name != "sites-available":
+        return None  # someone else's site: leave it alone
+    link.unlink()
+    print(f"Disabled the distribution's default nginx site ({link}); re-enable with: ln -s {target} {link}")
+    return link, target
+
+
 def apply_nginx(config: DeployConfig, paths: Paths) -> None:
     if config.deploy_mode != "nginx":
         remove_nginx_site(paths)
@@ -217,6 +236,7 @@ def apply_nginx(config: DeployConfig, paths: Paths) -> None:
             "nginx mode selected but nginx is not installed (install.sh installs it automatically)."
         )
     previous = paths.nginx_site.read_text(encoding="utf-8") if paths.nginx_site.exists() else None
+    disabled_default = disable_stock_default_site(config, paths)
     paths.nginx_site.parent.mkdir(parents=True, exist_ok=True)
     version = parse_nginx_version(shell.nginx_version_output())
     paths.nginx_site.write_text(render_nginx_config(config, version), encoding="utf-8")
@@ -232,6 +252,8 @@ def apply_nginx(config: DeployConfig, paths: Paths) -> None:
             paths.nginx_site.unlink()
         else:
             paths.nginx_site.write_text(previous, encoding="utf-8")
+        if disabled_default is not None:
+            disabled_default[0].symlink_to(disabled_default[1])
         raise DeployError("nginx -t rejected the new site config; the previous config was restored.") from exc
     shell.run(["systemctl", "reload", "nginx"])
 

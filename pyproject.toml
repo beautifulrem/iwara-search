@@ -1,6 +1,6 @@
 [project]
 name = "search-iwara"
-version = "0.2.1"
+version = "0.2.2"
 description = "Local Oreno3D metadata mirror with SQLite search and a FastAPI UI."
 readme = "README.md"
 license = "MIT"
