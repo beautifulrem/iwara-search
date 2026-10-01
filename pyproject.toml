@@ -1,6 +1,6 @@
 [project]
 name = "search-iwara"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local Oreno3D metadata mirror with SQLite search and a FastAPI UI."
 readme = "README.md"
 license = "MIT"
@@ -26,6 +26,7 @@ Repository = "https://github.com/beautifulrem/iwara-search"
 
 [dependency-groups]
 dev = [
+  "httpx2>=2.13",  # starlette.testclient's HTTP client (the runtime crawler uses httpx)
   "hypothesis>=6.120",
   "mypy>=1.13",
   "pre-commit>=4.0",

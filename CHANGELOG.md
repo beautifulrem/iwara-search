@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] — 2026-10-01
+
+### Security
+- Upgrade dependencies with published advisories found by the CI audit: starlette 1.0.0 → 1.7.0
+  (PYSEC-2026-161, -248, -249, -2280, -2281, via fastapi 0.135 → 0.142), anyio 4.13 → 4.14.2
+  (CVE-2026-63374, CVE-2026-64847), click 8.3.2 → 8.5.0 (PYSEC-2026-2132) and idna 3.11 → 3.20
+  (PYSEC-2026-215); typer 0.24 → 0.27 for click 8.5 compatibility.
+
+### Fixed
+- CI dependency audit: audit the locked runtime requirements under Python 3.13 without
+  re-resolving (it previously failed before checking anything).
+- Tests use `httpx2` for Starlette's test client, as Starlette 1.7 recommends.
+
 ## [0.2.0] — 2026-10-01
 
 ### Security

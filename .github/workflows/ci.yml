@@ -103,8 +103,12 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      - run: uv export --no-dev --no-hashes --format requirements-txt > requirements.txt
-      - run: uvx --from pip-audit==2.10.1 pip-audit --strict --requirement requirements.txt
+      # Audit the locked runtime dependencies (the project itself is not on PyPI). Versions are
+      # fully pinned by uv.lock, so pip-audit checks them directly instead of re-resolving.
+      - run: uv export --no-dev --no-hashes --no-emit-project --format requirements-txt > requirements.txt
+      - run: >-
+          uvx --python 3.13 --from pip-audit==2.10.1
+          pip-audit --strict --disable-pip --no-deps --requirement requirements.txt
 
   deploy-assets:
     name: Deploy tooling & container
