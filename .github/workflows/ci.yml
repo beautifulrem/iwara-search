@@ -53,7 +53,7 @@ jobs:
           enable-cache: true
       - run: uv sync
       - run: uv run pytest -m "not slow and not e2e" -n auto --cov --cov-report=term --cov-report=xml
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: coverage.xml
@@ -91,7 +91,7 @@ jobs:
       - run: >-
           uv run pytest -m e2e -n auto --browser ${{ matrix.browser }}
           --screenshot=only-on-failure --output=test-results
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: e2e-artifacts-${{ matrix.browser }}
