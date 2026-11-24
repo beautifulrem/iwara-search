@@ -5,11 +5,12 @@ from __future__ import annotations
 import sqlite3
 from typing import Final
 
-from ..models import DatasetStatus, MovieCard, RankingKind, RankingRow
+from ..models import DatasetStatus, EntityKind, MovieCard, RankingKind, RankingRow
 from .mappers import CARD_COLUMNS, load_cards
 
 RANK_ORDER: Final = "popularity DESC, total_favorites DESC, movie_count DESC, name"
 RANK_COLUMNS: Final = "kind, source_id, name, movie_count, total_views, total_favorites, popularity, hot"
+FACET_KINDS: Final[tuple[EntityKind, ...]] = ("characters", "tags", "authors", "origins")
 
 
 def _kind_filter(kind: RankingKind) -> tuple[str, tuple[str, ...]]:
@@ -54,6 +55,9 @@ class RankingStore:
             "authors": self.top("authors", limit=limit),
             "categories": self.top("categories", limit=limit),
         }
+
+    def facet_workbench(self, *, limit: int = 6) -> dict[EntityKind, list[RankingRow]]:
+        return {kind: self.top(kind, limit=limit) for kind in FACET_KINDS}
 
     def top_movies_by_author(
         self, author_ids: list[int], *, per_author: int = 8

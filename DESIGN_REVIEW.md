@@ -84,3 +84,44 @@ Synthesized and deduplicated across **Audit A (Main Agent)**, **Audit B (Unslop)
 9. **Excessive Chrome:** Mobile first-viewport loses `46.6%` of height to double-row sticky chrome + multi-row pill toolbars; Detail right column nests pills inside bordered rows inside bordered panels.
 10. **Lack of Product Identity:** Hide the word "Iwara" in the baseline UI and the shell could be a generic podcast directory, SaaS template gallery, or course portal. Its true identity—**fast boolean CJK/Latin 3D metadata indexing (`ALL` / `ANY` / `NOT`) and archival preservation**—is invisible on the primary surface.
 11. **Over-designed Minimalism:** Hiding all card tags on mobile (`@container (max-width: 13.5rem)`) and truncating desktop tags to `12ch` sacrificed essential metadata scannability (`4K`, `60fps`, `カメラ配布`) for tidy-looking boxes.
+
+---
+
+## 5. Phase 6 & 7 — Candidate Concept & Design Contract Independent Reviews
+
+1. **Candidate Concept Evaluation (`frontend-reviewer` isolated context `5ec5e49de3852cc1ffb923b8a0b9be95`):**
+   - Evaluated three genuinely distinct interactive HTML prototypes (`Concept A: Persistent Facet Workbench`, `Concept B: Command-Ribbon & Inline Facet Strip`, `Concept C: Split Inspector Light-Table`).
+   - **Verdict:** **`PASS` for Refined Concept A** (*Stage Light-Table & Faceted Archive Workbench*), incorporating Concept B's structured boolean active-filter bar (`ALL` / `ANY` / `NOT` / `OR` / `≥` / `≤`) and rejecting Concept C's dual-scroll split inspector trap.
+2. **Design Contract Evaluation (`frontend-reviewer` isolated context `429780020937b6edb5b83c256e0a1a2a`):**
+   - Audited `PRODUCT.md`, `DESIGN.md`, `.impeccable/design.json`, and `DESIGN_CONTRACT.md` for workflow alignment, contrast math, anti-slop bans, keyboard/fold budgets, and engineering constraints.
+   - **Verdict:** **`PASS`** (enforcing `≥ 24×24px` fine / `≥ 44×44px` coarse pointer minimums, `<main>`-first DOM order, `y ≤ 185px` unfiltered / `y ≤ 250px` 2-chip mobile fold budget, and `0` `impeccable detect` findings without inline ignore comments).
+
+---
+
+## 6. Phase 9 — Iterative Independent Final Acceptance Ledger (`frontend-reviewer`)
+
+Every Final Acceptance review was executed in a **brand-new isolated `frontend-reviewer` subagent context** with neutral factual prompts, live Playwright Chromium inspection across `:8771` (seeded trilingual catalog) and `:8772` (empty-DB onboarding), and zero self-evaluation priming:
+
+| Review Stage | Subagent Context | Weighted Score | Open P0 / P1 | Verdict | Key Findings Surfaced & Remediations Applied |
+|---|---|---:|---:|---|---|
+| **Baseline Audit** | `8f1f14054c89b14b20b1afa4d2892534` | `6.16 / 10` | `1 P0 · 6 P1` | `FAIL` | Surfaced `F-01`..`F-12` (No-JS broken entity inputs, 6-click blurred modal filter trap, fake center `▶` play button on deleted videos, half-sliced CJK tags, 45-Tab sidebar trap, `394px` mobile header/toolbar tax, duplicated global sidebars, AI template gradients/glows). |
+| **Final Round 1** | `f825c9ffb77be093230a08d7b14d275c` | `8.18 / 10` | `0 P0 · 2 P1` | `CONDITIONAL PASS` | Flagged mobile coarse touch targets `< 44×44px` + `.search__clear` overlapping query text, and mobile `/tags` 5-column squeeze. Fixed coarse hit targets, `:has()` input padding, mobile `<aside>`/detail/ranking responsive grids, and No-JS mobile `.site-nav`. |
+| **Final Round 2** | `cb1a8fdb7d691ddc861a292aeb7376bc` | `8.22 / 10` | `0 P0 · 3 P1` | `CONDITIONAL PASS` | Flagged bottom combobox clipping behind sticky `.sheet__foot` + duplicate `#filter-q`, cramped `168px` mobile `#site-search` hiding `.search__scope`, residual `(0,2,0)` `.preset-chip` specificity override, Detail taxonomy missing context-preserving `+`, and hidden mobile ranking views column. Fixed single keyword authority, decluttered `< 40rem` JS header (moving lang/theme to `#drawer` so `#site-search` expands to `~316px`), added universal `_assert_all_targets` E2E audit, added Detail `+`/`−` context preservation, and restored all 3 mobile ranking metrics. |
+| **Final Round 3** | `6468778fde90dfd8e4da3ac601af3f84` | `8.75 / 10` | `0 P0 · 0 P1` | `CONDITIONAL PASS` | `0 P0 · 0 P1`, surfaced 4 high-leverage `P2`s: empty-DB mobile `#sync-command` `axe-core` `scrollable-region-focusable` violation, `.is-dropup` combobox covering its own field label/chips, stale `sessionStorage.lastSearchHref` across `/authors`, and `360px` dual-sort toolbar crowding. Fixed `#sync-command` `tabindex="0"` + wrap, downward `.sheet__body` scroll runway (`padding-block-end: 14rem` when open), directory-aware `sessionStorage` clearing + `document.referrer` validation, and unified mobile 8-option `#sort-select`. |
+| **Final Round 4** | `100285040d447775b6f70791fb7ca321` | `7.84 / 10` | `1 P0 · 0 P1` | `FAIL` | Caught critical `[P0-1]` in `_filter_groups()` (`str(item)` serializing `EntityLink(...)` repr into `[data-combo-value]` hidden inputs, wiping existing entity filters on re-submit or 422-crashing at `≥ 7` tags), plus `[P2-1]` narrow card `+N` off-by-1 & `44px` brick tags, `[P2-2]` No-JS `161px` 3-row mobile header, and `[P3-1]` desktop `.dir-tabs` vertical stack. Fixed `str(item.id)` + `syncHidden()`, exact narrow/wide `+N` tag math + `24px` visual pills inside `44×44px` coarse `a.tag` targets, `≤ 104px` 2-row No-JS mobile header, and single-row desktop `.ranking-top`. |
+| **Final Round 5** | `b829d9fe813960ad7711bf766ce09df2` | **`9.04 / 10`** | **`0 P0 · 0 P1`** | **`PASS`** | Verified all `F-01`..`F-12` and all prior round issues resolved across 33 live screenshots and 30 `axe-core` scans (`0` violations). Issued explicit **`PASS`** (`9.04 / 10`), noting two optional `P2` polish items (`R5-01` Japanese mobile drawer `.drawer__tools` `minmax(0, 1fr)` track + `.drawer__theme` wrap, and `R5-02` `303` canonical redirect for fast-submitted `q_*` queries), both subsequently closed and regression-tested. |
+
+---
+
+## 7. Final Independent Rubric Breakdown (`9.04 / 10` — `PASS`)
+
+| Evaluation Dimension | Weight | Baseline Score | Final Round 5 Score | Weighted Contribution | Delta |
+|---|---:|---:|---:|---:|---:|
+| **Product Fit** | 20% | `6.5` | **`9.2`** | `1.840` | `+2.7` |
+| **Information Architecture & Workflow** | 20% | `5.8` | **`9.0`** | `1.800` | `+3.2` |
+| **Interaction Quality** | 15% | `5.5` | **`8.9`** | `1.335` | `+3.4` |
+| **Visual Hierarchy & Density** | 15% | `6.4` | **`9.2`** | `1.380` | `+2.8` |
+| **Originality & Anti-Slop** | 10% | `5.8` | **`9.3`** | `0.930` | `+3.5` |
+| **System Consistency** | 10% | `7.0` | **`9.0`** | `0.900` | `+2.0` |
+| **Accessibility & Responsiveness** | 10% | `6.6` | **`8.5`** *(pre-`R5-01` fix)* | `0.850` | `+1.9` |
+| **Weighted Total** | **100%** | **`6.16 / 10` (`FAIL`)** | **`9.04 / 10` (`PASS`)** | **`9.035`** | **`+2.88`** |

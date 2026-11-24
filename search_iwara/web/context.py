@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated, Any, Final, NotRequired, TypedDict, TypeVar, cast
+from typing import Annotated, Any, Final, Literal, NotRequired, TypedDict, TypeVar, cast
 
 from fastapi import Depends, Request
 from fastapi.responses import Response
@@ -38,6 +38,7 @@ T = TypeVar("T")
 LANG_COOKIE: Final = "ui_lang"
 PAGE_VARY: Final = "Cookie, Accept-Language"
 ETAG_TIME_BUCKET_SECONDS: Final = 300  # relative times ("3 hours ago") shift slowly
+FilterTone = Literal["require", "include", "exclude", "neutral"]
 
 # ranking/entity kind -> the search parameter that filters by it
 ENTITY_SEARCH_PARAM: Final[dict[EntityKind, str]] = {
@@ -136,16 +137,55 @@ class FilterGroup(TypedDict):
     name: str
     kind: EntityKind
     api: str
+    require: bool
     negative: bool
     selected: list[EntityLink]
     value: str
+    pending_query: str
 
 
 class ActiveFilter(TypedDict):
     group: str
+    operator: str
+    tone: FilterTone
     label: str
     negative: bool
     remove_href: str
+
+
+class QuickPreset(TypedDict):
+    key: str
+    label: str
+    href: str
+    active: bool
+    field: str
+    clear_field: str
+    value: str
+
+
+class FacetItem(TypedDict):
+    source_id: int
+    name: str
+    movie_count: int
+    solo_href: str
+    include_href: str
+    exclude_href: str
+    include_active: bool
+    exclude_active: bool
+
+
+class FacetSection(TypedDict):
+    kind: EntityKind
+    icon: str
+    more_href: str
+    items: list[FacetItem]
+
+
+class RankingTab(TypedDict):
+    kind: RankingKind
+    icon: str
+    href: str
+    active: bool
 
 
 class SortLink(TypedDict):
@@ -153,6 +193,24 @@ class SortLink(TypedDict):
     href: str
     active: bool
     icon: NotRequired[str]
+
+
+class TaxonomyChip(TypedDict):
+    id: int | None
+    name: str
+    kind: EntityKind
+    is_req: bool
+    solo_href: str
+    include_href: str
+    exclude_href: str
+    include_active: bool
+    exclude_active: bool
+
+
+class TaxonomyRow(TypedDict):
+    label_key: str
+    icon: str
+    items: list[TaxonomyChip]
 
 
 class BaseContext(TypedDict):
@@ -171,7 +229,11 @@ class BaseContext(TypedDict):
     nav: str | None
     header_query: str
     header_hidden: dict[str, str]
+    clear_query_href: str | None
+    scoped_filter_count: int
     sidebar: dict[str, list[RankingRow]] | None
+    workbench: list[FacetSection] | None
+    quick_presets: list[QuickPreset]
     dataset: DatasetStatus | None
     entity_search_param: dict[EntityKind, str]
 
@@ -194,10 +256,14 @@ class IndexContext(BaseContext):
 class DetailContext(BaseContext):
     movie: MovieDetailView
     related_movies: list[MovieCard]
+    back_search_href: str
+    has_search_context: bool
+    taxonomy_rows: list[TaxonomyRow]
 
 
 class RankingContext(BaseContext):
     entity_kind: RankingKind
+    ranking_tabs: list[RankingTab]
     items: list[RankingRow]
     rank_offset: int
     total: int
@@ -265,18 +331,22 @@ def sidebar(state: AppState, rankings: RankingStore) -> dict[str, list[RankingRo
     return state.cache.get_or_set(f"sidebar:{data_version(state)}", rankings.sidebar)
 
 
+def facet_workbench(state: AppState, rankings: RankingStore) -> dict[EntityKind, list[RankingRow]]:
+    return state.cache.get_or_set(f"workbench:{data_version(state)}", rankings.facet_workbench)
+
+
 def dataset_status(state: AppState, rankings: RankingStore) -> DatasetStatus:
     return state.cache.get_or_set(f"dataset:{data_version(state)}", rankings.dataset_status)
 
 
-def page_etag(request: Request, state: AppState, lang: str) -> str:
+def page_etag(request: Request, state: AppState, lang: str, *, extra: str = "") -> str:
     """Weak validator for an HTML page: data version + URL + language + assets + time bucket.
 
     The five-minute bucket keeps relative timestamps ("3 hours ago") reasonably fresh.
     """
 
     bucket = int(time.time() // ETAG_TIME_BUCKET_SECONDS)
-    material = f"{data_version(state)}|{lang}|{request.url}|{state.static_version}|{bucket}"
+    material = f"{data_version(state)}|{lang}|{request.url}|{state.static_version}|{bucket}|{extra}"
     return 'W/"' + hashlib.blake2b(material.encode(), digest_size=10).hexdigest() + '"'
 
 
@@ -320,11 +390,11 @@ def base_context(
         lang_query = query if code is None else {**query, "lang": code}
         return str(request.url.replace(query=update_query_params(lang_query), fragment=""))
 
+    source_params = canonical_query if (canonical_query is not None and path == "/") else request.query_params
     header_hidden = {
-        key: value
-        for key, value in request.query_params.items()
-        if key not in {"q", "page", "lang"} and value
+        key: value for key, value in source_params.items() if key not in {"q", "page", "lang"} and value
     }
+    header_query = request.query_params.get("q", "").strip() if path == "/" else ""
     return {
         "request": request,
         "lang": lang,
@@ -351,9 +421,13 @@ def base_context(
         "og_image": og_image,
         "robots": "index,follow" if state.settings.allow_indexing else "noindex,nofollow",
         "nav": nav,
-        "header_query": request.query_params.get("q", "") if path == "/" else "",
+        "header_query": header_query,
         "header_hidden": header_hidden if path == "/" else {},
-        "sidebar": sidebar(state, rankings) if rankings is not None else None,
+        "clear_query_href": search_href(query, q=None) if (path == "/" and header_query) else None,
+        "scoped_filter_count": 0,
+        "sidebar": None,
+        "workbench": None,
+        "quick_presets": [],
         "dataset": dataset_status(state, rankings) if rankings is not None else None,
         "entity_search_param": ENTITY_SEARCH_PARAM,
     }

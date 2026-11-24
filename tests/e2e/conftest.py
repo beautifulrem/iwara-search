@@ -53,6 +53,27 @@ def app_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     thread.join(timeout=10)
 
 
+@pytest.fixture(scope="module")
+def empty_app_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    db = tmp_path_factory.mktemp("e2e_empty") / "empty.sqlite3"
+    CrawlStore.open(db).close()
+
+    port = _free_port()
+    server = uvicorn.Server(
+        uvicorn.Config(create_app(get_settings(db_path=db)), port=port, log_level="warning")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 15
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("empty server did not start")
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=10)
+
+
 def hermetic(target: BrowserContext | Page, app_url: str) -> None:
     """Serve only the app under test: every other request (e.g. the fixture thumbnails on
     oreno3d.com) gets an immediate 404, so results never depend on the network."""

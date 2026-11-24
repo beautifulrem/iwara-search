@@ -8,49 +8,69 @@
 {% set video_href = movie.external_video_url|safe_href %}
 {% set source_href = movie.oreno3d_url|safe_href %}
 
-<nav class="breadcrumb" aria-label="{{ tr('detail.breadcrumb.aria') }}">
-  <ol>
-    <li><a href="/">{{ tr("detail.breadcrumb.home") }}</a></li>
-    {% if movie.origins %}
-    <li><a href="/?origin_any={{ movie.origins[0].id }}">{{ movie.origins[0].name }}</a></li>
-    {% endif %}
-    {% if movie.characters %}
-    <li><a href="/?character_any={{ movie.characters[0].id }}">{{ movie.characters[0].name }}</a></li>
-    {% endif %}
-    <li><span aria-current="page"{{ card.title|lang_attr }}>{{ card.title or tr("common.untitled") }}</span></li>
-  </ol>
-</nav>
+{% set is_missing = movie.status == "missing" %}
+
+<div class="detail-top">
+  <a class="back-pill" href="{{ back_search_href }}" data-back-search{% if has_search_context %} data-server-context="1"{% endif %}>
+    {{ ui.icon("arrow-left") }}<span>{{ tr("detail.back_search") }}</span>
+  </a>
+  <nav class="breadcrumb" aria-label="{{ tr('detail.breadcrumb.aria') }}">
+    <ol>
+      <li><a href="/">{{ tr("detail.breadcrumb.home") }}</a></li>
+      {% if movie.origins %}
+      <li><a href="/?origin_any={{ movie.origins[0].id }}"{{ movie.origins[0].name|lang_attr }}>{{ movie.origins[0].name }}</a></li>
+      {% endif %}
+      {% if movie.characters %}
+      <li><a href="/?character_any={{ movie.characters[0].id }}"{{ movie.characters[0].name|lang_attr }}>{{ movie.characters[0].name }}</a></li>
+      {% endif %}
+      <li><span aria-current="page"{{ card.title|lang_attr }}>{{ card.title or tr("common.untitled") }}</span></li>
+    </ol>
+  </nav>
+</div>
 
 <article class="detail">
-  <div class="detail__media">
-    <figure class="detail__figure media-frame{% if not thumb %} is-broken{% endif %}">
-      {% if thumb %}
-      <img src="{{ thumb }}" alt="{{ tr('detail.thumbnail_alt', title=card.title) }}" width="1280" height="720"
-        decoding="async" loading="eager" fetchpriority="high" referrerpolicy="no-referrer">
-      {% endif %}
-      <span class="media-frame__fallback">{{ ui.icon("image-off") }}<span>{{ tr("common.no_image") }}</span></span>
-      {% if video_href %}
-      <a class="detail__play" href="{{ video_href }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">
-        {{ ui.icon("play") }}
-      </a>
-      {% endif %}
-    </figure>
-  </div>
+  <figure class="detail__figure media-frame{% if not thumb %} is-broken{% endif %}{% if is_missing %} is-missing{% endif %}">
+    {% if thumb %}
+    <img src="{{ thumb }}" alt="{{ tr('detail.thumbnail_alt', title=card.title) }}" width="1280" height="720"
+      decoding="async" loading="eager" fetchpriority="high" referrerpolicy="no-referrer">
+    {% endif %}
+    <span class="media-frame__fallback">
+      {{ ui.icon("archive" if is_missing else "image-off") }}
+      <span>{{ tr("detail.missing_frame" if is_missing else "common.no_image") }}</span>
+    </span>
+    {% if is_missing and thumb %}
+    <figcaption class="detail__archival-stamp">{{ ui.icon("archive") }}<span>{{ tr("detail.missing_frame") }}</span></figcaption>
+    {% endif %}
+  </figure>
 
   <div class="detail__info">
     <div class="detail__sticky">
       <div class="detail__badges">
-        {% if movie.status == "missing" %}
-        <span class="status status--missing">{{ tr("detail.status.missing") }}</span>
+        {% if is_missing %}
+        <span class="status status--missing">{{ ui.icon("archive") }}{{ tr("detail.status.missing") }}</span>
         {% else %}
         <span class="status status--active">{{ tr("detail.status.active") }}</span>
         {% endif %}
+        <span class="detail__id">#{{ card.source_site_id }}</span>
       </div>
       <h1 class="detail__title"{{ card.title|lang_attr }}>{{ card.title or tr("common.untitled") }}</h1>
 
-      {% if movie.status == "missing" %}
+      {% if is_missing %}
       <p class="notice">{{ tr("detail.missing_notice") }}</p>
       {% endif %}
+
+      <div class="detail__actions">
+        {% if video_href %}
+        <a class="btn {% if is_missing %}btn--secondary{% else %}btn--primary{% endif %}" href="{{ video_href }}" target="_blank" rel="noopener noreferrer">
+          {{ ui.icon("external") }}<span>{{ tr("detail.open_iwara_archived" if is_missing else "detail.open_iwara") }}</span>{{ ui.external_hint() }}
+        </a>
+        {% endif %}
+        {% if source_href %}
+        <a class="btn {% if is_missing %}btn--ghost{% else %}btn--secondary{% endif %}" href="{{ source_href }}" target="_blank" rel="noopener noreferrer">
+          {{ ui.icon("external") }}<span>{{ tr("detail.open_oreno3d_archived" if is_missing else "detail.open_oreno3d") }}</span>{{ ui.external_hint() }}
+        </a>
+        {% endif %}
+      </div>
 
       <dl class="facts">
         <div class="facts__item">
@@ -61,52 +81,39 @@
           <dt>{{ ui.icon("heart") }}{{ tr("detail.favorites") }}</dt>
           <dd>{{ card.favorite_count|number }}</dd>
         </div>
-        <div class="facts__item facts__item--wide">
+        <div class="facts__item">
           <dt>{{ ui.icon("calendar") }}{{ tr("detail.published") }}</dt>
           <dd>
             {% if card.published_at %}
             <time datetime="{{ card.published_at|iso_datetime }}">{{ card.published_at }}</time>
             {% set relative = card.published_at|reltime %}
-            {% if not card.published_at.startswith(relative) %}<span class="facts__sub">{{ relative }}</span>{% endif %}
+            {% if not card.published_at.startswith(relative) %}<span class="facts__sub">({{ relative }})</span>{% endif %}
             {% else %}—{% endif %}
           </dd>
         </div>
       </dl>
 
-      <div class="detail__actions">
-        {% if video_href %}
-        <a class="btn btn--primary btn--lg" href="{{ video_href }}" target="_blank" rel="noopener noreferrer">
-          {{ ui.icon("play") }}<span>{{ tr("detail.open_iwara") }}</span>{{ ui.external_hint() }}
-        </a>
-        {% endif %}
-        {% if source_href %}
-        <a class="btn btn--secondary btn--lg" href="{{ source_href }}" target="_blank" rel="noopener noreferrer">
-          {{ ui.icon("external") }}<span>{{ tr("detail.open_oreno3d") }}</span>{{ ui.external_hint() }}
-        </a>
-        {% endif %}
-      </div>
-
       <dl class="taxonomy">
+        {% for row in taxonomy_rows %}
         <div class="taxonomy__row">
-          <dt>{{ ui.icon("user") }}{{ tr("detail.creator") }}</dt>
+          <dt>{{ ui.icon(row.icon) }}{{ tr(row.label_key) }}</dt>
           <dd>
-            {% if card.author_id is not none %}
-            <a class="pill-link" href="/?author_any={{ card.author_id }}">{{ card.author_name }}</a>
-            {% elif card.author_name %}
-            <span class="pill-link is-static">{{ card.author_name }}</span>
-            {% else %}<span class="taxonomy__none">—</span>{% endif %}
-          </dd>
-        </div>
-        {% for key, icon_name, items, param in [
-          ("detail.origin", "book", movie.origins, "origin_any"),
-          ("detail.character", "sparkles", movie.characters, "character_any"),
-          ("detail.tag", "tag", movie.tags, "tag_any"),
-        ] %}
-        <div class="taxonomy__row">
-          <dt>{{ ui.icon(icon_name) }}{{ tr(key) }}</dt>
-          <dd>
-            {% for item in items %}
-            <a class="pill-link" href="/?{{ param }}={{ item.id }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
+            {% for item in row["items"] %}
+            {% if item.id is not none %}
+            {% set inc_label = tr("workbench.include_tag", name=item.name) if item.is_req else tr("workbench.include_entity", name=item.name) %}
+            {% set exc_label = tr("workbench.exclude_entity", name=item.name) %}
+            <span class="tax-chip{% if item.is_req %} tax-chip--require{% endif %}{% if item.include_active %} is-included{% elif item.exclude_active %} is-excluded{% endif %}">
+              <a class="tax-chip__name" href="{{ item.solo_href }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
+              <a class="tax-chip__op tax-chip__op--inc{% if item.is_req %} tax-chip__op--req{% endif %}{% if item.include_active %} is-active{% endif %}"
+                href="{{ item.include_href }}" data-tax-op="inc" data-tax-kind="{{ item.kind }}" data-tax-id="{{ item.id }}"
+                aria-label="{{ inc_label }}" title="{{ inc_label }}"{% if item.include_active %} aria-current="true"{% endif %}>{{ ui.icon("plus") }}</a>
+              <a class="tax-chip__op tax-chip__op--exc{% if item.exclude_active %} is-active{% endif %}"
+                href="{{ item.exclude_href }}" data-tax-op="exc" data-tax-kind="{{ item.kind }}" data-tax-id="{{ item.id }}"
+                aria-label="{{ exc_label }}" title="{{ exc_label }}"{% if item.exclude_active %} aria-current="true"{% endif %}>{{ ui.icon("minus") }}</a>
+            </span>
+            {% else %}
+            <span class="tax-chip is-static"><span class="tax-chip__name"{{ item.name|lang_attr }}>{{ item.name }}</span></span>
+            {% endif %}
             {% else %}
             <span class="taxonomy__none">—</span>
             {% endfor %}
@@ -115,17 +122,17 @@
         {% endfor %}
       </dl>
 
+      {% if movie.detail_fetched_at %}
       <p class="detail__footnote">
-        <a class="link-back" href="/">{{ ui.icon("arrow-left") }}{{ tr("detail.back_search") }}</a>
-        {% if movie.detail_fetched_at %}
         <span>{{ tr("detail.fetched_at") }} <time datetime="{{ movie.detail_fetched_at }}">{{ movie.detail_fetched_at|timestamp }}</time></span>
-        {% endif %}
       </p>
+      {% endif %}
     </div>
   </div>
+
   {% if movie.author_comment %}
-  <section class="panel detail__comment" aria-labelledby="comment-title">
-    <h2 class="panel__title" id="comment-title">{{ tr("detail.comment") }}</h2>
+  <section class="detail__comment" aria-labelledby="comment-title">
+    <h2 class="detail__section-label" id="comment-title">{{ tr("detail.comment") }}</h2>
     <p class="comment"{{ movie.author_comment|lang_attr }}>{{ movie.author_comment }}</p>
   </section>
   {% endif %}

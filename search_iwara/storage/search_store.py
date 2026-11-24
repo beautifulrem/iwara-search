@@ -97,6 +97,36 @@ class SearchStore:
             )
         return "(" + joiner.join(parts) + ")", params
 
+    def _entity_clause(self, kind: EntityKind, mode: str, ids: list[int]) -> tuple[list[str], list[Any]]:
+        if mode == "all":
+            return [f"m.id IN ({_movies_with_entities_sql(kind, 1)})" for _ in ids], list(ids)
+        if kind == "authors":
+            operator = "NOT IN" if mode == "not" else "IN"
+            return [f"m.id {operator} ({_movies_with_entities_sql(kind, len(ids))})"], list(ids)
+        table, join_table, column = ENTITY_TABLES[kind]
+        ph = ", ".join("?" * len(ids))
+        entity_rows = self.conn.execute(
+            f"SELECT e.id, COALESCE(s.movie_count, 0) FROM {table} e "
+            f"LEFT JOIN entity_stats s ON s.kind = ? AND s.source_id = e.source_site_id "
+            f"WHERE e.source_site_id IN ({ph})",
+            (kind, *ids),
+        ).fetchall()
+        if not entity_rows:
+            return (["0"], []) if mode == "any" else ([], [])
+        internal_ids = [int(r[0]) for r in entity_rows]
+        est_links = sum(int(r[1]) for r in entity_rows)
+        int_ph = ", ".join("?" * len(internal_ids))
+        if est_links > 25_000:
+            prefix = "NOT EXISTS" if mode == "not" else "EXISTS"
+            sql = (
+                f"{prefix} (SELECT 1 FROM {join_table} rel "
+                f"WHERE rel.movie_id = m.id AND rel.{column} IN ({int_ph}))"
+            )
+            return [sql], internal_ids
+        operator = "NOT IN" if mode == "not" else "IN"
+        sql = f"m.id {operator} (SELECT rel.movie_id FROM {join_table} rel WHERE rel.{column} IN ({int_ph}))"
+        return [sql], internal_ids
+
     def build_where(self, filters: SearchFilters) -> tuple[str, list[Any]]:
         clauses = ["m.status = 'active'"]
         params: list[Any] = []
@@ -108,16 +138,10 @@ class SearchStore:
 
         for field_name, kind, mode in ENTITY_FILTERS:
             ids: list[int] = getattr(filters, field_name)
-            if not ids:
-                continue
-            if mode == "all":
-                for entity_id in ids:
-                    clauses.append(f"m.id IN ({_movies_with_entities_sql(kind, 1)})")
-                    params.append(entity_id)
-            else:
-                operator = "NOT IN" if mode == "not" else "IN"
-                clauses.append(f"m.id {operator} ({_movies_with_entities_sql(kind, len(ids))})")
-                params.extend(ids)
+            if ids:
+                extra_clauses, extra_params = self._entity_clause(kind, mode, ids)
+                clauses.extend(extra_clauses)
+                params.extend(extra_params)
 
         if filters.published_from:
             clauses.append("m.published_at >= ?")
@@ -151,16 +175,34 @@ class SearchStore:
         total = min(total, max_results)
         pages = page_count(total, page_size)
         page = min(max(page, 1), pages)
-        rows = self.conn.execute(
-            f"""
-            SELECT {CARD_COLUMNS}
-            FROM movies m LEFT JOIN authors a ON a.id = m.author_id
-            WHERE {where_sql}
-            ORDER BY {SORT_CLAUSES[filters.sort]}
-            LIMIT ? OFFSET ?
-            """,
-            [*params, page_size, (page - 1) * page_size],
-        ).fetchall()
+        page_ids = [
+            int(r[0])
+            for r in self.conn.execute(
+                f"""
+                SELECT m.id
+                FROM movies m
+                WHERE {where_sql}
+                ORDER BY {SORT_CLAUSES[filters.sort]}
+                LIMIT ? OFFSET ?
+                """,
+                [*params, page_size, (page - 1) * page_size],
+            ).fetchall()
+        ]
+        rows: list[sqlite3.Row] = []
+        if page_ids:
+            id_ph = ", ".join("?" * len(page_ids))
+            fetched = {
+                int(r["id"]): r
+                for r in self.conn.execute(
+                    f"""
+                    SELECT {CARD_COLUMNS}
+                    FROM movies m LEFT JOIN authors a ON a.id = m.author_id
+                    WHERE m.id IN ({id_ph})
+                    """,
+                    page_ids,
+                ).fetchall()
+            }
+            rows = [fetched[mid] for mid in page_ids if mid in fetched]
         return SearchPage(
             items=load_cards(self.conn, rows, with_tags=True),
             total=total,
@@ -253,12 +295,14 @@ class SearchStore:
 
     # --- entities ----------------------------------------------------------------------------
 
-    def autocomplete(self, kind: EntityKind, query: str, *, limit: int = 10) -> list[EntityLink]:
+    def autocomplete_with_counts(
+        self, kind: EntityKind, query: str, *, limit: int = 10
+    ) -> list[tuple[EntityLink, int]]:
         table = ENTITY_TABLES[kind][0]
         cleaned = query.strip()
         if not cleaned:
             rows = self.conn.execute(
-                "SELECT source_id AS id, name FROM entity_stats WHERE kind = ? "
+                "SELECT source_id AS id, name, movie_count FROM entity_stats WHERE kind = ? "
                 "ORDER BY popularity DESC, name LIMIT ?",
                 (kind, limit),
             ).fetchall()
@@ -266,7 +310,7 @@ class SearchStore:
             like = f"%{escape_like(cleaned)}%"
             rows = self.conn.execute(
                 f"""
-                SELECT e.source_site_id AS id, e.name
+                SELECT e.source_site_id AS id, e.name, COALESCE(s.movie_count, 0) AS movie_count
                 FROM {table} e
                 LEFT JOIN entity_stats s ON s.kind = ? AND s.source_id = e.source_site_id
                 WHERE e.name LIKE ? ESCAPE '\\'
@@ -275,7 +319,57 @@ class SearchStore:
                 """,
                 (kind, like, cleaned, limit),
             ).fetchall()
-        return [EntityLink(int(row["id"]), str(row["name"])) for row in rows]
+        return [(EntityLink(int(row["id"]), str(row["name"])), int(row["movie_count"])) for row in rows]
+
+    def autocomplete(self, kind: EntityKind, query: str, *, limit: int = 10) -> list[EntityLink]:
+        return [item for item, _ in self.autocomplete_with_counts(kind, query, limit=limit)]
+
+    def resolve_entity_names(
+        self, kind: EntityKind, raw_text: str, *, limit: int = 5
+    ) -> tuple[list[int], list[str]]:
+        """Resolve comma-separated entity names (or numeric IDs) typed without JS selection."""
+
+        table = ENTITY_TABLES[kind][0]
+        phrases = [part.strip() for part in raw_text.replace("，", ",").replace("、", ",").split(",")]
+        phrases = [part for part in phrases if part][:limit]
+        matched: list[int] = []
+        unmatched: list[str] = []
+        seen: set[int] = set()
+        for phrase in phrases:
+            if phrase.isascii() and phrase.isdigit():
+                candidate_id = int(phrase)
+                exists = self.conn.execute(
+                    f"SELECT source_site_id FROM {table} WHERE source_site_id = ?",
+                    (candidate_id,),
+                ).fetchone()
+                if exists is not None:
+                    if candidate_id not in seen:
+                        seen.add(candidate_id)
+                        matched.append(candidate_id)
+                    continue
+            like = f"%{escape_like(phrase)}%"
+            row = self.conn.execute(
+                f"""
+                SELECT e.source_site_id AS id
+                FROM {table} e
+                LEFT JOIN entity_stats s ON s.kind = ? AND s.source_id = e.source_site_id
+                WHERE e.name LIKE ? ESCAPE '\\'
+                ORDER BY LOWER(e.name) = LOWER(?) DESC,
+                         INSTR(LOWER(e.name), LOWER(?)) = 1 DESC,
+                         COALESCE(s.popularity, 0) DESC,
+                         e.source_site_id
+                LIMIT 1
+                """,
+                (kind, like, phrase, phrase),
+            ).fetchone()
+            if row is None:
+                unmatched.append(phrase)
+            else:
+                entity_id = int(row["id"])
+                if entity_id not in seen:
+                    seen.add(entity_id)
+                    matched.append(entity_id)
+        return matched, unmatched
 
     def resolve_entities(self, kind: EntityKind, source_ids: list[int]) -> list[EntityLink]:
         if not source_ids:

@@ -73,8 +73,10 @@ Run before each release with **NVDA + Firefox** (Windows) and **VoiceOver + Safa
   kana gets `lang="ja"`, Hangul `lang="ko"`. Text made only of Han characters may be Chinese or
   Japanese; it is deliberately left unmarked because a wrong `lang` is worse than none, so a
   screen reader may read it with the page language's voice.
-* Without JavaScript the entity filters (authors, characters, origins, tags) cannot search by
-  name; existing selections are kept, date and number ranges work.
+* Without JavaScript the entity comboboxes do not show live autocomplete popups, but typing an
+  author, character, origin or tag name directly into the inline filter form resolves against
+  indexed entities on the server; existing selections, facet `+`/`−` links, date presets and
+  number ranges also work without scripting.
 * Relative times ("5 hours ago") are computed on the server and are not refreshed while a page
   stays open.
 

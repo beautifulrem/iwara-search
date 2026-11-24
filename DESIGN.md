@@ -22,6 +22,8 @@ colors:
   ink-primary: "light-dark(oklch(20% 0.016 265), oklch(95.5% 0.005 265))"
   ink-secondary: "light-dark(oklch(36% 0.015 265), oklch(81.5% 0.009 265))"
   ink-muted: "light-dark(oklch(46.5% 0.015 265), oklch(73.5% 0.011 265))"
+  card-scrim: "oklch(0% 0 0 / 0.58)"
+  pill-scrim: "oklch(10% 0.008 265 / 0.78)"
 typography:
   display:
     fontFamily: "\"Inter\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans\", \"Noto Sans CJK SC\", \"Noto Sans JP\", sans-serif"
@@ -35,6 +37,11 @@ typography:
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: "-0.015em"
+  subheadline:
+    fontFamily: "\"Inter\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans\", \"Noto Sans CJK SC\", \"Noto Sans JP\", sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 650
+    lineHeight: 1.25
   title:
     fontFamily: "\"Inter\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans\", \"Noto Sans CJK SC\", \"Noto Sans JP\", sans-serif"
     fontSize: "0.9375rem"
