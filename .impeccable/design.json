@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-24T17:42:00Z",
+  "title": "Design System: Search Iwara",
+  "extensions": {
+    "colorMeta": {
+      "stage-ruby": {
+        "role": "primary",
+        "displayName": "Stage Ruby",
+        "canonical": "light-dark(oklch(51.5% 0.205 356), oklch(72.5% 0.165 356))",
+        "tonalRamp": ["#2a0b19", "#47122b", "#6e1640", "#961455", "#b80d6b", "#e04890", "#f475a9", "#feeaf0"]
+      },
+      "require-teal": {
+        "role": "secondary",
+        "displayName": "Require Teal",
+        "canonical": "light-dark(oklch(45% 0.125 175), oklch(80% 0.12 175))",
+        "tonalRamp": ["#06241d", "#07382e", "#005240", "#006a51", "#148f71", "#35b494", "#59d7b9", "#dbf6ee"]
+      },
+      "exclude-vermilion": {
+        "role": "tertiary",
+        "displayName": "Exclude Vermilion",
+        "canonical": "light-dark(oklch(49% 0.18 26), oklch(77.5% 0.13 26))",
+        "tonalRamp": ["#2b110f", "#451b18", "#6d211d", "#93201f", "#b01e22", "#d9534f", "#fe938a", "#ffeae7"]
+      },
+      "canvas-bg": {
+        "role": "neutral",
+        "displayName": "Slate Obsidian / Archival Paper",
+        "canonical": "light-dark(oklch(98.2% 0.004 265), oklch(15.5% 0.007 265))",
+        "tonalRamp": ["#0b0c0f", "#131519", "#1b1d22", "#262930", "#555962", "#767a84", "#f0f2f6", "#f8f9fc"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Error status codes and standalone onboarding focal headings." },
+      "headline": { "displayName": "Headline", "purpose": "Primary h1 titles on search, detail, and ranking pages." },
+      "title": { "displayName": "Card & Section Title", "purpose": "Two-line clamped movie titles and rail section headings." },
+      "body": { "displayName": "Body", "purpose": "Multi-script prose, author notes, and combobox options." },
+      "label": { "displayName": "Telemetry Mono", "purpose": "Tabular numerals, boolean operators (ALL/ANY/NOT), counts, and timestamps." }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 1px 2px var(--shadow-color)", "purpose": "Subtle active segment elevation." },
+      { "name": "shadow-md", "value": "0 2px 6px -1px var(--shadow-color), 0 8px 20px -6px var(--shadow-color)", "purpose": "Dropdown menus and combobox popups." },
+      { "name": "shadow-xl", "value": "0 4px 12px -2px var(--shadow-color), 0 24px 48px -12px var(--shadow-color)", "purpose": "Slide-over filter sheet and mobile navigation drawer." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Standard responsive easing for all transitions." },
+      { "name": "dur-fast", "value": "140ms", "purpose": "Hover, focus, and toggle feedback." },
+      { "name": "dur-base", "value": "200ms", "purpose": "Popover and disclosure transitions." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "39.99rem" },
+      { "name": "desktop-rail", "value": "64rem" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Solid high-contrast primary action button without decorative glow.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">显示结果</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid transparent; background: var(--accent, #b80d6b); color: var(--on-accent, #ffffff); font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: background 140ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-primary:hover { background: var(--accent-strong, #961455); } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus, #b80d6b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Boolean Query Chip (ALL / ANY / NOT)",
+      "kind": "chip",
+      "refersTo": "chip-require",
+      "description": "Removable semantic boolean filter chip distinguishing ALL, ANY, and NOT conditions.",
+      "html": "<a class=\"ds-chip-req\" href=\"#\"><span class=\"ds-op\">ALL</span><span>标签: 4K</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6 6 18M6 6l12 12\"/></svg></a>",
+      "css": ".ds-chip-req { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; background: var(--require-soft, #dbf6ee); color: var(--require, #006a51); border: 1px solid currentColor; font-size: 0.8125rem; font-weight: 600; text-decoration: none; transition: border-color 140ms; } .ds-op { font-family: monospace; font-size: 0.6875rem; font-weight: 700; } .ds-chip-req:hover { opacity: 0.9; } .ds-chip-req:focus-visible { outline: 2px solid var(--focus, #b80d6b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Facet Workbench Row",
+      "kind": "nav",
+      "refersTo": "button-secondary",
+      "description": "Corpus facet row with solo-pivot link, tabular count, and >=24x24px +/- boolean operators.",
+      "html": "<div class=\"ds-facet-row\"><a class=\"ds-facet-name\" href=\"#\">Yelan (夜兰)</a><span class=\"ds-facet-count\">12</span><a class=\"ds-facet-op\" href=\"#\" aria-label=\"包含 Yelan\">+</a><a class=\"ds-facet-op\" href=\"#\" aria-label=\"排除 Yelan\">−</a></div>",
+      "css": ".ds-facet-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 4px; min-height: 32px; padding: 0 6px; border-radius: 6px; } .ds-facet-row:hover { background: var(--surface-2, #f0f2f6); } .ds-facet-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text, #12161d); font-size: 0.8125rem; text-decoration: none; } .ds-facet-count { font-family: monospace; font-size: 0.75rem; color: var(--text-muted, #555962); padding: 0 4px; } .ds-facet-op { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; border: 1px solid var(--border-strong, #767a84); color: var(--text-2, #393d45); font-family: monospace; font-size: 0.75rem; text-decoration: none; } .ds-facet-op:hover { border-color: var(--accent, #b80d6b); color: var(--accent-ink, #a4005d); background: var(--accent-soft, #feeaf0); } .ds-facet-op:focus-visible { outline: 2px solid var(--focus, #b80d6b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Search Input Bar",
+      "kind": "input",
+      "refersTo": "button-secondary",
+      "description": "Architectural 8px-radius unified search bar with keyboard shortcut keycap.",
+      "html": "<div class=\"ds-search\"><input class=\"ds-search-input\" type=\"search\" placeholder=\"搜索标题、作者、角色、原作或标签\"><kbd class=\"ds-kbd\">/</kbd></div>",
+      "css": ".ds-search { position: relative; display: flex; align-items: center; max-width: 480px; } .ds-search-input { width: 100%; height: 40px; padding: 0 44px 0 12px; border-radius: 8px; border: 1px solid var(--border-strong, #767a84); background: var(--surface, #ffffff); color: var(--text, #12161d); font-size: 0.9375rem; } .ds-search-input:focus-visible { outline: none; border-color: var(--accent, #b80d6b); box-shadow: 0 0 0 3px rgba(184,13,107,0.2); } .ds-kbd { position: absolute; right: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-strong, #767a84); font-family: monospace; font-size: 0.75rem; color: var(--text-muted, #555962); }"
+    },
+    {
+      "name": "Stage Contact Media Card",
+      "kind": "card",
+      "refersTo": "media-card",
+      "description": "16:9 contact-sheet card with grounded hover border, tabular stats, and inner-block truncated tags.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card-media\"><span class=\"ds-card-stat\">1.9K</span></div><h3 class=\"ds-card-title\"><a href=\"#\">【MMD原神】夜蘭 4K 60fps</a></h3><div class=\"ds-card-tags\"><span class=\"ds-tag\"><span class=\"ds-tag-txt\">カメラ配布 Camera</span></span></div></article>",
+      "css": ".ds-card { padding: 8px; border-radius: 10px; border: 1px solid var(--border, #dfe3ea); background: var(--surface, #ffffff); display: flex; flex-direction: column; gap: 6px; transition: border-color 140ms; } .ds-card:hover { border-color: var(--border-strong, #767a84); } .ds-card-media { position: relative; aspect-ratio: 16/9; border-radius: 6px; background: #1e2230; } .ds-card-stat { position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 4px; background: rgba(12,14,18,0.8); color: #fff; font-family: monospace; font-size: 0.6875rem; } .ds-card-title a { color: var(--text, #12161d); font-weight: 600; font-size: 0.9375rem; text-decoration: none; } .ds-card-title a:hover { color: var(--accent-ink, #a4005d); } .ds-tag { display: inline-flex; padding: 2px 6px; border-radius: 4px; background: var(--surface-2, #f0f2f6); font-size: 0.75rem; } .ds-tag-txt { display: block; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Stage Light-Table & Faceted Archive",
+    "overview": "Search Iwara is a precision boolean catalog and archival metadata index for 3D / MMD character animation works—an Operate-mode working tool used in long, multi-script (zh-Hans / ja / en) browsing and filtering sessions. Its visual system treats the screen like a calibrated darkroom contact sheet (and an archival daylight contact table in light mode): interface chrome stays low-chroma, flat, and structurally quiet so 16:9 stage renders and dense CJK/Latin metadata carry 100% of the visual signal.\n\nEvery pixel serves either visual scanning or boolean narrowing. Instead of decorative SaaS tropes—hue-to-hue gradient text, glowing pink pill buttons, rounded gradient icon tiles, rainbow progress meters, or hovering bouncy cards—product character comes from surgical boolean clarity (ALL intersection, ANY union, NOT exclusion) and honest archival states (active vs missing).",
+    "keyCharacteristics": [
+      "Low-Chroma Slate-Obsidian & Archival Paper Grounds: Cool slate neutrals (hue 265, chroma <= 0.015) keep multi-hour sessions calm in both nocturnal dark mode and crisp daylight mode.",
+      "Semantic Boolean Color Coding: Color outside thumbnails always encodes query logic—Stage Ruby for ANY / primary selection, Require Teal for ALL intersection, and Exclude Vermilion (with strikethrough) for NOT exclusions.",
+      "Architectural Geometry (4px–14px): Nested rectangular radii replace bubbly 999px pills across inputs, buttons, chips, and cards.",
+      "DOM-First Keyboard & Zero-JS Ergonomics: Main results precede auxiliary rails in DOM order, while every core facet and filter degrades cleanly to standard server-rendered HTML links and forms."
+    ],
+    "rules": [
+      { "name": "The Zero-Gradient Chrome Rule", "body": "Never apply multi-hue gradients or colored glow shadows to text, buttons, section icon tiles, or ranking meters; thumbnails own chromatic richness while chrome uses solid tokens.", "section": "colors" },
+      { "name": "The Boolean Color Meaning Rule", "body": "Ruby (ANY), Teal (ALL), and Vermilion (NOT) carry strict query-logic semantics and must never be used as random decorative highlights.", "section": "colors" },
+      { "name": "The Inner-Block Ellipsis Rule", "body": "Never place text-overflow: ellipsis directly on a flex or inline-flex box; always apply truncation to an inner display: block child with min-inline-size: 0 so CJK and Latin glyphs never clip mid-character.", "section": "typography" },
+      { "name": "The Grounded Contact-Sheet Rule", "body": "Media cards stay anchored on their grid plane (translate: none on hover); hover feedback uses border contrast (--border-strong) and title color rather than lifting or tilting cards.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep <main id=\"main\"> before <aside class=\"sidebar\"> in DOM order and position the desktop workbench rail via CSS Grid (grid-template-areas).",
+      "Do mirror every light-dark(...) color token 1:1 in @supports not (color: light-dark(#000, #fff)) and maintain >= 4.5:1 text contrast and >= 3.0:1 control-border contrast in both themes.",
+      "Do wrap truncated tag and author labels in an inner display: block span with overflow: hidden; text-overflow: ellipsis; white-space: nowrap and provide title attributes when truncated.",
+      "Do enforce >= 24x24px desktop target sizes (>= 44x44px on @media (pointer: coarse)) on all +/- facet operators, chip removals, and header tools."
+    ],
+    "donts": [
+      "Don't use background-clip: text gradients, gradient section icon tiles, rainbow <meter> bars, colored button glows, -6deg logo rotations, or -3px card hover floats.",
+      "Don't render a centered play button over static thumbnails or show a primary \"Watch on Iwara\" CTA on status='missing' archived records.",
+      "Don't render the global <aside> rail on Movie Detail, Ranking pages, Error pages, or Empty-Database onboarding.",
+      "Don't emit inline style= attributes, inline <script> tags, inline on*= handlers, or external font CDN requests (googleapis), preserving strict CSP compliance."
+    ]
+  }
+}

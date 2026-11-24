@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concept A — Persistent Facet Workbench</title>
+<style>
+
+:root {
+  --bg: oklch(14.5% 0.007 260);
+  --surface: oklch(18.2% 0.009 260);
+  --surface-2: oklch(22% 0.011 260);
+  --surface-3: oklch(26% 0.012 260);
+  --border: oklch(27% 0.011 260);
+  --border-strong: oklch(40% 0.014 260);
+  --text: oklch(95% 0.005 260);
+  --text-2: oklch(76% 0.010 260);
+  --text-muted: oklch(62% 0.012 260);
+  --accent: oklch(68% 0.175 355);
+  --accent-soft: oklch(25% 0.055 355);
+  --accent-ink: oklch(82% 0.11 355);
+  --neg: oklch(72% 0.15 25);
+  --neg-soft: oklch(24% 0.05 25);
+  --req: oklch(76% 0.13 165);
+  --req-soft: oklch(24% 0.045 165);
+  --font-sans: "Inter", system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", "Hiragino Sans", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1b1e28;
+}
+.thumb svg { width: 100%; height: 100%; display: block; }
+.thumb-stats {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  gap: 4px;
+}
+.stat {
+  background: oklch(10% 0.008 260 / 0.82);
+  border: 1px solid oklch(100% 0 0 / 0.08);
+  color: #f2f4f8;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.hl { background: var(--accent-soft); color: var(--accent-ink); padding: 0 2px; border-radius: 2px; }
+
+.hdr {
+  height: 54px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+.brand-mark { width: 22px; height: 22px; border-radius: 5px; background: var(--accent); display: grid; place-items: center; color: #111; font-weight: 700; font-size: 12px; }
+.search-box {
+  flex: 1; max-width: 520px; height: 36px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px;
+  display: flex; align-items: center; padding: 0 8px 0 12px; gap: 8px;
+}
+.search-scope { font-size: 11px; background: var(--accent-soft); color: var(--accent-ink); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+.search-val { flex: 1; color: var(--text); font-size: 14px; }
+.kbd { font-family: var(--font-mono); font-size: 11px; padding: 1px 5px; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--text-muted); }
+.nav { display: flex; gap: 4px; margin-left: 8px; }
+.nav a { padding: 6px 10px; border-radius: 6px; color: var(--text-2); font-size: 13px; font-weight: 500; }
+.nav a.active { background: var(--surface-2); color: var(--text); }
+.hdr-right { margin-left: auto; display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 12px; }
+.shell {
+  max-width: 1440px; margin: 0 auto; padding: 20px 24px;
+  display: grid; grid-template-columns: 256px minmax(0, 1fr);
+  grid-template-areas: "rail main"; gap: 24px;
+}
+/* Note: main is FIRST in DOM for keyboard Tab priority, positioned right via grid-area */
+main { grid-area: main; min-width: 0; }
+aside {
+  grid-area: rail;
+  display: flex; flex-direction: column; gap: 16px;
+  border-right: 1px solid var(--border); padding-right: 18px;
+}
+.rail-group { display: flex; flex-direction: column; gap: 6px; }
+.rail-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 600; color: var(--text-2); padding: 0 4px; }
+.rail-more { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.presets { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0; }
+.preset { font-size: 12px; padding: 3px 8px; border-radius: 5px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
+.preset.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.facet-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px;
+  height: 28px; padding: 0 6px; border-radius: 5px; font-size: 13px; color: var(--text-2);
+}
+.facet-row:hover { background: var(--surface); color: var(--text); }
+.facet-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.facet-ops { display: inline-flex; gap: 2px; }
+.op {
+  width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--border-strong);
+  display: grid; place-items: center; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);
+}
+.op.plus { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+.facet-cnt { font-size: 11px; color: var(--text-muted); min-width: 24px; text-align: right; }
+
+.work-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px;
+}
+.work-title { display: flex; align-items: baseline; gap: 10px; }
+.work-title h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.work-count { font-size: 13px; color: var(--text-muted); }
+.controls { display: flex; align-items: center; gap: 8px; }
+.seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 2px; gap: 2px; }
+.seg span { padding: 4px 10px; border-radius: 5px; font-size: 12px; color: var(--text-2); font-weight: 500; }
+.seg span.on { background: var(--surface-3); color: var(--text); }
+.btn-ctl {
+  height: 30px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text); font-size: 12px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.cnt-badge { background: var(--accent); color: #111; font-weight: 700; font-size: 11px; padding: 0 5px; border-radius: 4px; }
+
+.query-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 16px;
+}
+.qchip {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px;
+  border-radius: 5px; font-size: 12px; border: 1px solid var(--border-strong); background: var(--surface);
+}
+.qchip-op { font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+.qchip.inc { border-color: color-mix(in oklch, var(--accent) 45%, var(--border)); background: var(--accent-soft); color: var(--accent-ink); }
+.qchip.req { border-color: color-mix(in oklch, var(--req) 45%, var(--border)); background: var(--req-soft); color: var(--req); }
+.qchip.exc { border-color: color-mix(in oklch, var(--neg) 45%, var(--border)); background: var(--neg-soft); color: var(--neg); }
+.qchip.exc .qchip-val { text-decoration: line-through; }
+.qclear { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 14px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+  padding: 8px; display: flex; flex-direction: column; gap: 8px;
+}
+.card-body { display: flex; flex-direction: column; gap: 5px; padding: 0 2px 2px; flex: 1; }
+.card-title {
+  font-size: 13.5px; font-weight: 500; line-height: 1.4;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.card-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.card-author { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 3px; }
+.tag {
+  display: inline-flex; align-items: center; max-width: 100%; height: 20px; padding: 0 6px;
+  border-radius: 4px; background: var(--surface-2); color: var(--text-2); font-size: 11px;
+}
+.tag-txt { display: block; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-more { color: var(--text-muted); font-family: var(--font-mono); background: transparent; border: 1px solid var(--border); }
+
+@media (max-width: 640px) {
+  .hdr { height: 50px; padding: 0 12px; gap: 8px; }
+  .nav, .hdr-right, aside, .search-scope, .kbd { display: none; }
+  .shell { grid-template-columns: 1fr; grid-template-areas: "main"; padding: 12px; }
+  .work-bar { flex-wrap: wrap; gap: 8px; padding-bottom: 8px; margin-bottom: 8px; }
+  .work-title { width: 100%; justify-content: space-between; }
+  .controls { width: 100%; justify-content: space-between; gap: 6px; }
+  .seg { flex-shrink: 0; }
+  .seg span { padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+  .btn-ctl { white-space: nowrap; padding: 0 8px; font-size: 12px; }
+  .btn-ctl .long-lbl { display: none; }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .card { padding: 6px; }
+  .card-title { font-size: 12.5px; }
+}
+</style>
+</head>
+<body>
+  <header class="hdr">
+    <a class="brand" href="#"><span class="brand-mark">◆</span><span>Search Iwara</span></a>
+    <div class="search-box">
+      <span class="search-scope">当前筛选内</span>
+      <span class="search-val">4K</span>
+      <span class="kbd">/</span>
+    </div>
+    <nav class="nav">
+      <a class="active" href="#">检索库</a>
+      <a href="#">角色</a>
+      <a href="#">作者</a>
+      <a href="#">标签</a>
+      <a href="#">原作</a>
+    </nav>
+    <div class="hdr-right num">64 部已索引 · 11 分钟前同步 · ZH · ☾</div>
+  </header>
+
+  <div class="shell">
+    <main>
+      <div class="work-bar">
+        <div class="work-title">
+          <h1>“4K” 的检索结果</h1>
+          <span class="work-count num">共 8 部匹配</span>
+        </div>
+        <div class="controls">
+          <div class="seg">
+            <span class="on">飙升</span>
+            <span>热门</span>
+            <span>高赞</span>
+            <span>最新</span>
+          </div>
+          <span class="btn-ctl">更多 ▾</span>
+          <span class="btn-ctl"><span class="long-lbl">高级布尔</span>筛选 <span class="cnt-badge num">4</span></span>
+        </div>
+      </div>
+
+      <div class="query-strip">
+        <span class="qchip req"><span class="qchip-op">ALL</span><span>标签: 4K</span><span>×</span></span>
+        <span class="qchip inc"><span class="qchip-op">ANY</span><span>角色: Yelan (夜兰)</span><span>×</span></span>
+        <span class="qchip exc"><span class="qchip-op">NOT</span><span class="qchip-val">标签: AI生成</span><span>×</span></span>
+        <span class="qchip"><span class="qchip-op num">≥</span><span class="num">浏览 1,000</span><span>×</span></span>
+        <span class="qclear">清空全部条件</span>
+      </div>
+
+      <div class="grid">
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g250" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(250,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(288,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g250)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(288,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 1,959</span>
+              <span class="stat">♥ 101</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">【MMD原神】夜蘭で『CH4NGE』<span class="hl">4K</span> 60fps カメラ・表情改変</h2>
+            <div class="card-meta">
+              <span class="card-author">Kaede Motion</span>
+              <span class="card-time num">11 小时前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">4K</span></span><span class="tag"><span class="tag-txt">60fps</span></span><span class="tag"><span class="tag-txt">カメラ配布 Camera</span></span><span class="tag tag-more">+5</span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g28" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(28,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(66,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g28)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(66,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 2,372</span>
+              <span class="stat">♥ 185</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">【ブルアカMMD】早瀬ユウカ — Midnight Calculation Stage Live</h2>
+            <div class="card-meta">
+              <span class="card-author">星野スタジオ</span>
+              <span class="card-time num">17 小时前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">ループ動画 Loop</span></span><span class="tag"><span class="tag-txt">物理演算 Physics</span></span><span class="tag"><span class="tag-txt">ステージライブ</span></span><span class="tag tag-more">+2</span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g330" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(330,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(8,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g330)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(8,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 3,103</span>
+              <span class="stat">♥ 162</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">Summer Festival Choreography — Full Ray-Traced Render</h2>
+            <div class="card-meta">
+              <span class="card-author">PixelForge 3D</span>
+              <span class="card-time num">22 小时前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">RayTracing</span></span><span class="tag"><span class="tag-txt">60fps</span></span><span class="tag"><span class="tag-txt">衣装改変 Outfit</span></span><span class="tag tag-more">+1</span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g195" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(195,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(233,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g195)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(233,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 4,064</span>
+              <span class="stat">♥ 384</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">初音ミク — Rainy Neon Arcade Loop (Blender Cycles <span class="hl">4K</span>)</h2>
+            <div class="card-meta">
+              <span class="card-author">Aoi Works</span>
+              <span class="card-time num">1 天前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">4K</span></span><span class="tag"><span class="tag-txt">カメラ配布 Camera</span></span><span class="tag"><span class="tag-txt">ループ動画 Loop</span></span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g165" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(165,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(203,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g165)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(203,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 3,123</span>
+              <span class="stat">♥ 302</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">Cyber Idol Showcase — Volumetric Stage Lighting Test #07</h2>
+            <div class="card-meta">
+              <span class="card-author">白銀レンダリング研究所</span>
+              <span class="card-time num">1 天前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">RayTracing</span></span><span class="tag"><span class="tag-txt">ダンス Dance</span></span><span class="tag"><span class="tag-txt">物理演算 Physics</span></span><span class="tag tag-more">+2</span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g280" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(280,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(318,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g280)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(318,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 4,110</span>
+              <span class="stat">♥ 179</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">【ホロMMD】星街すいせい『Stellar Stellar』アンコール演出</h2>
+            <div class="card-meta">
+              <span class="card-author">VelvetRig</span>
+              <span class="card-time num">1 天前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">60fps</span></span><span class="tag"><span class="tag-txt">ステージライブ</span></span><span class="tag"><span class="tag-txt">衣装改変 Outfit</span></span><span class="tag tag-more">+1</span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g215" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(215,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(253,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g215)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(253,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 2,340</span>
+              <span class="stat">♥ 130</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">砂狼シロコ — Rooftop Sunset Lo-fi Walk Cycle</h2>
+            <div class="card-meta">
+              <span class="card-author">Kaede Motion</span>
+              <span class="card-time num">2 天前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">ループ動画 Loop</span></span><span class="tag"><span class="tag-txt">カメラ配布 Camera</span></span></div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="thumb">
+            <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g350" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(350,36%,18%)"/>
+          <stop offset="1" stop-color="hsl(28,44%,30%)"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" fill="url(#g350)"/>
+      <polygon points="230,0 410,0 520,360 120,360" fill="#fff" opacity="0.07"/>
+      <circle cx="320" cy="164" r="52" fill="hsl(28,70%,68%)" opacity="0.30"/>
+      <path d="M292 292 L320 132 L348 292 Z" fill="#fff" opacity="0.22"/>
+    </svg>
+            <div class="thumb-stats">
+              <span class="stat">👁 5,820</span>
+              <span class="stat">♥ 492</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <h2 class="card-title">Moonlit Courtyard Fan Dance · 古风庭院折扇舞 <span class="hl">4K</span></h2>
+            <div class="card-meta">
+              <span class="card-author">夜梟 NightOwl</span>
+              <span class="card-time num">2 天前</span>
+            </div>
+            <div class="card-tags"><span class="tag"><span class="tag-txt">4K</span></span><span class="tag"><span class="tag-txt">ダンス Dance</span></span><span class="tag"><span class="tag-txt">衣装改変 Outfit</span></span><span class="tag tag-more">+3</span></div>
+          </div>
+        </article></div>
+    </main>
+
+    <aside>
+      <div class="rail-group">
+        <div class="rail-head"><span>快捷范围预设</span></div>
+        <div class="presets">
+          <span class="preset">24h 内</span>
+          <span class="preset">近 7 天</span>
+          <span class="preset">近 30 天</span>
+          <span class="preset on">浏览 ≥ 1K</span>
+          <span class="preset">点赞 ≥ 100</span>
+        </div>
+      </div>
+
+      <div class="rail-group">
+        <div class="rail-head"><span>角色切面 (+包含 / −排除)</span><span class="rail-more">全部 →</span></div>
+        <div class="facet-row"><span class="facet-name">Yelan (夜兰)</span><span class="facet-ops"><span class="op plus">+</span><span class="op">−</span></span><span class="facet-cnt num">12</span></div>
+        <div class="facet-row"><span class="facet-name">初音ミク</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">11</span></div>
+        <div class="facet-row"><span class="facet-name">星街すいせい</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">10</span></div>
+        <div class="facet-row"><span class="facet-name">早瀬ユウカ</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">9</span></div>
+        <div class="facet-row"><span class="facet-name">ホタル (Firefly)</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">8</span></div>
+      </div>
+
+      <div class="rail-group">
+        <div class="rail-head"><span>高频标签</span><span class="rail-more">全部 →</span></div>
+        <div class="facet-row"><span class="facet-name">ループ動画 Loop</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">27</span></div>
+        <div class="facet-row"><span class="facet-name">ダンス Dance</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">26</span></div>
+        <div class="facet-row"><span class="facet-name">カメラ配布 Camera</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">23</span></div>
+        <div class="facet-row"><span class="facet-name">物理演算 Physics</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">22</span></div>
+        <div class="facet-row"><span class="facet-name">RayTracing</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">19</span></div>
+      </div>
+
+      <div class="rail-group">
+        <div class="rail-head"><span>热门创作者</span><span class="rail-more">全部 →</span></div>
+        <div class="facet-row"><span class="facet-name">Aoi Works</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">8</span></div>
+        <div class="facet-row"><span class="facet-name">Kaede Motion</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">8</span></div>
+        <div class="facet-row"><span class="facet-name">星野スタジオ</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">8</span></div>
+        <div class="facet-row"><span class="facet-name">夜梟 NightOwl</span><span class="facet-ops"><span class="op">+</span><span class="op">−</span></span><span class="facet-cnt num">8</span></div>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>
