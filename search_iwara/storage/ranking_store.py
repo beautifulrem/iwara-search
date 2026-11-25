@@ -64,15 +64,9 @@ class RankingStore:
     ) -> list[RankingRow]:
         where, params = _kind_and_query_filter(kind, q)
         order_sql = RANKING_SORT_CLAUSES[sort]
-        cleaned = clean_text(q)
-        if cleaned:
-            order_sql = f"INSTR(LOWER(name), LOWER(?)) = 1 DESC, {order_sql}"
-            query_params: list[Any] = [*params, cleaned, limit, offset]
-        else:
-            query_params = [*params, limit, offset]
         rows = self.conn.execute(
             f"SELECT {RANK_COLUMNS} FROM entity_stats WHERE {where} ORDER BY {order_sql} LIMIT ? OFFSET ?",
-            query_params,
+            [*params, limit, offset],
         ).fetchall()
         return [
             RankingRow(

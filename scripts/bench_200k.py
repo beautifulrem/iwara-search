@@ -338,6 +338,13 @@ def _measure_concurrency(db_path: Path) -> tuple[dict[str, Any], dict[str, Any]]
     def writer_loop() -> None:
         ws = CrawlStore(connect(db_path))
         try:
+            a_name = str(ws.conn.execute("SELECT name FROM authors WHERE source_site_id = 1").fetchone()[0])
+            t1_name = str(ws.conn.execute("SELECT name FROM tags WHERE source_site_id = 1").fetchone()[0])
+            t2_name = str(ws.conn.execute("SELECT name FROM tags WHERE source_site_id = 2").fetchone()[0])
+            o_name = str(ws.conn.execute("SELECT name FROM origins WHERE source_site_id = 1").fetchone()[0])
+            c_name = str(
+                ws.conn.execute("SELECT name FROM characters WHERE source_site_id = 1").fetchone()[0]
+            )
             for batch_idx in range(8):
                 if stop_writer.is_set():
                     break
@@ -350,10 +357,10 @@ def _measure_concurrency(db_path: Path) -> tuple[dict[str, Any], dict[str, Any]]
                                 oreno3d_url=f"https://oreno3d.com/movies/{sid}",
                                 title=f"concurrent write yelan 水着 #{sid}",
                                 external_video_url=f"https://www.iwara.tv/video/{sid}",
-                                author=EntityRef(1, "author 1 yelan"),
-                                tags=[EntityRef(1, "tag 1 yelan"), EntityRef(2, "tag 2 dance")],
-                                origins=[EntityRef(1, "origin 1")],
-                                characters=[EntityRef(1, "character 1")],
+                                author=EntityRef(1, a_name),
+                                tags=[EntityRef(1, t1_name), EntityRef(2, t2_name)],
+                                origins=[EntityRef(1, o_name)],
+                                characters=[EntityRef(1, c_name)],
                                 thumbnail_url=None,
                                 published_at="2026-11-25 12:00",
                                 view_count=100,

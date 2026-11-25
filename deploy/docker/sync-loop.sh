@@ -14,8 +14,14 @@ jitter_max="${SYNC_JITTER_SECONDS:-600}"
 initial_delay_max="${SYNC_INITIAL_DELAY_SECONDS:-0}"
 marker="${SYNC_DRIFT_MARKER:-/data/.sync-parser-drift}"
 sleep_pid=""
+child_pid=""
 
 cleanup() {
+  if [ -n "$child_pid" ]; then
+    kill -TERM "$child_pid" 2>/dev/null || true
+    wait "$child_pid" 2>/dev/null || true
+    child_pid=""
+  fi
   if [ -n "$sleep_pid" ]; then
     kill "$sleep_pid" 2>/dev/null || true
   fi
@@ -50,8 +56,11 @@ if [ "$initial_delay_max" -gt 0 ]; then
 fi
 
 while :; do
-  search-iwara sync latest
+  search-iwara sync latest &
+  child_pid=$!
+  wait "$child_pid"
   code=$?
+  child_pid=""
   case "$code" in
     0 | 75) ;;
     1) log "sync finished with failures above tolerance (exit 1); retrying next cycle" ;;

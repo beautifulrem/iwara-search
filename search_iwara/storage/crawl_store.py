@@ -15,9 +15,10 @@ from ..models import CrawlerStats, EntityKind, EntityRef, ListUpsertResult, Movi
 from ..utils import ASCII_DIGITS_RE, utc_now
 from .connection import TransactionManager, connect
 from .migrations import migrate
-from .search_index import index_movie, optimize_indexes, rebuild_all_indexes, verify_indexes
+from .search_index import index_movie, index_movies_batch, merge_indexes, rebuild_all_indexes, verify_indexes
 from .sql import (
     ACTIVE_MOVIES_REFRESH,
+    BUMP_DATA_REVISION,
     ENTITY_STATS_REFRESH,
     ENTITY_TABLES,
     HOT_SCORE_UPDATE,
@@ -26,6 +27,7 @@ from .sql import (
 
 SOURCE_TZ = ZoneInfo("Asia/Tokyo")
 RETRY_BASE = timedelta(minutes=30)
+INLINE_REINDEX_CAP = 500
 RUN_COUNTERS = (
     "pages_checked",
     "failed_pages",
@@ -97,10 +99,11 @@ class CrawlStore:
             (entity.name, entity.url, now, entity_id),
         )
         if name_changed:
+            cap = INLINE_REINDEX_CAP + 2
             if kind == "authors":
                 linked = self.conn.execute(
-                    "SELECT id FROM movies WHERE author_id = ? AND status = 'active'",
-                    (entity_id,),
+                    "SELECT id FROM movies WHERE author_id = ? AND status = 'active' LIMIT ?",
+                    (entity_id, cap),
                 ).fetchall()
             else:
                 linked = self.conn.execute(
@@ -109,13 +112,18 @@ class CrawlStore:
                     FROM {join_table} rel
                     JOIN movies m ON m.id = rel.movie_id
                     WHERE rel.{column} = ? AND m.status = 'active'
+                    LIMIT ?
                     """,
-                    (entity_id,),
+                    (entity_id, cap),
                 ).fetchall()
-            for row in linked:
-                mid = int(row["id"])
-                if mid != skip_movie_id:
-                    self._reindex_search(mid)
+            target_ids = [int(row["id"]) for row in linked if int(row["id"]) != skip_movie_id]
+            if len(target_ids) <= INLINE_REINDEX_CAP:
+                index_movies_batch(self.conn, target_ids)
+            else:
+                self.conn.execute(
+                    "INSERT INTO app_meta(key, value) VALUES ('fts_dirty', '1') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '1'"
+                )
         return entity_id
 
     def _replace_relations(self, movie_id: int, kind: EntityKind, entity_ids: list[int]) -> None:
@@ -128,6 +136,9 @@ class CrawlStore:
 
     def _reindex_search(self, movie_id: int) -> None:
         index_movie(self.conn, movie_id)
+
+    def _bump_revision(self) -> None:
+        self.conn.execute(BUMP_DATA_REVISION)
 
     # --- movies ------------------------------------------------------------------------------
 
@@ -167,6 +178,7 @@ class CrawlStore:
             ).fetchone()
             movie_id = int(inserted["id"])
             self._reindex_search(movie_id)
+            self._bump_revision()
             return ListUpsertResult(movie_id=movie_id, is_new=True, list_changed=True, needs_detail=True)
 
         movie_id = int(row["id"])
@@ -207,6 +219,8 @@ class CrawlStore:
         )
         if title_changed:
             self._reindex_search(movie_id)
+        if list_changed:
+            self._bump_revision()
         return ListUpsertResult(
             movie_id=movie_id,
             is_new=False,
@@ -277,6 +291,7 @@ class CrawlStore:
             ids = [self._upsert_entity(kind, entity, skip_movie_id=movie_id) for entity in entities]
             self._replace_relations(movie_id, kind, ids)
         self._reindex_search(movie_id)
+        self._bump_revision()
 
     def mark_movie_missing(self, source_site_id: int, oreno3d_url: str) -> None:
         existing = self.conn.execute(
@@ -301,9 +316,14 @@ class CrawlStore:
             (source_site_id, oreno3d_url, now, now, now),
         ).fetchone()
         self._reindex_search(int(row["id"]))
+        self._bump_revision()
 
     def suppress_movies(
-        self, source_site_ids: Iterable[int], *, base_url: str = "https://oreno3d.com"
+        self,
+        source_site_ids: Iterable[int],
+        *,
+        base_url: str = "https://oreno3d.com",
+        reason: str | None = None,
     ) -> int:
         """Permanently suppress local entries (rights-holder/operator takedown) across sync runs."""
 
@@ -312,8 +332,16 @@ class CrawlStore:
             return 0
         now = utc_now()
         root = base_url.rstrip("/")
+        clean_reason = (reason or "").strip()
         with self.transaction():
             for sid in ids:
+                prior = self.conn.execute(
+                    "SELECT status FROM movies WHERE source_site_id = ?", (sid,)
+                ).fetchone()
+                if prior is not None and prior["status"] == "missing":
+                    self.set_state(f"suppressed_prior_missing:{sid}", "1")
+                if clean_reason:
+                    self.set_state(f"suppressed_reason:{sid}", clean_reason[:500])
                 row = self.conn.execute(
                     """
                     INSERT INTO movies (source_site_id, oreno3d_url, status, created_at, updated_at)
@@ -330,11 +358,12 @@ class CrawlStore:
                     "DELETE FROM crawl_errors WHERE entity_type = 'movie' AND entity_id = ?",
                     (str(sid),),
                 )
+            self._bump_revision()
         self.refresh_derived(full=True)
         return len(ids)
 
     def unsuppress_movies(self, source_site_ids: Iterable[int]) -> int:
-        """Lift local suppression: restore metadata-bearing rows to active or drop empty stubs."""
+        """Lift local suppression: restore metadata-bearing rows or drop empty stubs."""
 
         ids = list(dict.fromkeys(source_site_ids))
         if not ids:
@@ -344,22 +373,29 @@ class CrawlStore:
         with self.transaction():
             for sid in ids:
                 row = self.conn.execute(
-                    "SELECT id, title, detail_fetched_at FROM movies "
-                    "WHERE source_site_id = ? AND status = 'suppressed'",
+                    "SELECT id, title FROM movies WHERE source_site_id = ? AND status = 'suppressed'",
                     (sid,),
                 ).fetchone()
+                prior_missing = self.get_state(f"suppressed_prior_missing:{sid}") == "1"
+                self.conn.execute(
+                    "DELETE FROM crawl_state WHERE key IN (?, ?)",
+                    (f"suppressed_prior_missing:{sid}", f"suppressed_reason:{sid}"),
+                )
                 if row is None:
                     continue
                 movie_id = int(row["id"])
-                if not row["title"] and row["detail_fetched_at"] is None:
+                if not row["title"]:
                     self.conn.execute("DELETE FROM movies WHERE id = ?", (movie_id,))
                 else:
+                    target_status = "missing" if prior_missing else "active"
                     self.conn.execute(
-                        "UPDATE movies SET status = 'active', updated_at = ? WHERE id = ?",
-                        (now, movie_id),
+                        "UPDATE movies SET status = ?, updated_at = ? WHERE id = ?",
+                        (target_status, now, movie_id),
                     )
                 self._reindex_search(movie_id)
                 restored += 1
+            if restored:
+                self._bump_revision()
         if restored:
             self.refresh_derived(full=True)
         return restored
@@ -369,9 +405,11 @@ class CrawlStore:
 
         with self.transaction():
             rebuild_all_indexes(self.conn)
+            self.conn.execute("DELETE FROM app_meta WHERE key = 'fts_dirty'")
             self.conn.execute(ACTIVE_MOVIES_REFRESH)
             if verify:
                 verify_indexes(self.conn)
+            self._bump_revision()
         self.conn.execute("PRAGMA optimize")
 
     # --- crawl bookkeeping -------------------------------------------------------------------
@@ -524,19 +562,29 @@ class CrawlStore:
         """Recompute time-decayed scores and, when ``full``, the ranking read model & FTS segments."""
 
         with self.transaction():
+            dirty = self.conn.execute("SELECT value FROM app_meta WHERE key = 'fts_dirty'").fetchone()
+            is_dirty = dirty is not None and dirty[0] == "1"
             if full:
                 self.conn.execute(HOT_SCORE_UPDATE)
                 for statement in ENTITY_STATS_REFRESH:
                     self.conn.execute(statement)
                 self.conn.execute(ACTIVE_MOVIES_REFRESH)
-                optimize_indexes(self.conn)
+                if is_dirty:
+                    rebuild_all_indexes(self.conn)
+                    self.conn.execute("DELETE FROM app_meta WHERE key = 'fts_dirty'")
+                else:
+                    merge_indexes(self.conn)
             else:
                 self.conn.execute(HOT_SCORE_UPDATE_RECENT)
+                if is_dirty:
+                    rebuild_all_indexes(self.conn)
+                    self.conn.execute("DELETE FROM app_meta WHERE key = 'fts_dirty'")
             self.conn.execute(
                 "INSERT INTO app_meta(key, value) VALUES ('derived_refreshed_at', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (utc_now(),),
             )
+            self._bump_revision()
         self.conn.execute("PRAGMA optimize")
 
     def start_run(self, mode: str) -> int:
@@ -554,6 +602,7 @@ class CrawlStore:
                 "INSERT INTO sync_runs (mode, status, started_at) VALUES (?, 'running', ?) RETURNING id",
                 (mode, now),
             ).fetchone()
+            self._bump_revision()
         return int(row["id"])
 
     def finish_run(
@@ -579,3 +628,4 @@ class CrawlStore:
                 f"UPDATE sync_runs SET status = ?, finished_at = ?, error = ?{assignments} WHERE id = ?",
                 (status, utc_now(), error, *values.values(), run_id),
             )
+            self._bump_revision()

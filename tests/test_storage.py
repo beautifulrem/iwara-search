@@ -578,3 +578,86 @@ def test_dynamic_facet_counts_and_v4_to_v5_upgrade(tmp_path: Path) -> None:
     assert [row.name for row in facets["tags"]][:2] == ["60fps", "4K"]
     assert facets["authors"][0].name == "Kuro"
     conn.close()
+
+
+def test_mega_entity_rename_defers_fts_rebuild_to_refresh_derived(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import search_iwara.storage.crawl_store as cs_mod
+
+    monkeypatch.setattr(cs_mod, "INLINE_REINDEX_CAP", 1)
+    store = CrawlStore.open(tmp_path / "mega.sqlite3")
+    with store.transaction():
+        for sid in (10, 11, 12):
+            store.apply_movie_detail(make_detail(sid, title=f"Work {sid}", tags=[(99, "OldMegaTag")]))
+    with store.transaction():
+        store.apply_movie_detail(make_detail(13, title="Work 13", tags=[(99, "NewMegaTag")]))
+    dirty = store.conn.execute("SELECT value FROM app_meta WHERE key = 'fts_dirty'").fetchone()
+    assert dirty is not None
+    assert dirty[0] == "1"
+    store.refresh_derived(full=False)
+    assert store.conn.execute("SELECT value FROM app_meta WHERE key = 'fts_dirty'").fetchone() is None
+    assert (
+        SearchStore(store.conn)
+        .search(SearchFilters(q="NewMegaTag"), page=1, page_size=36, max_results=10_000)
+        .total
+        == 4
+    )
+    store.close()
+
+
+def test_mixed_cjk_ascii_2char_queries_disjunctive_facets_and_inode_pool(tmp_path: Path) -> None:
+    from search_iwara.storage.connection import ReadOnlyPool, StorageError
+
+    db_file = tmp_path / "mixed.sqlite3"
+    store = CrawlStore.open(db_file)
+    seed(
+        store,
+        (
+            make_detail(10, title="M字開脚 第1話 ドMな彼女", author=(1, "Alpha"), tags=[(1, "I字バランス")]),
+            make_detail(11, title="Pure Dance Stage", author=(2, "Beta"), tags=[(2, "60fps")]),
+        ),
+    )
+    # Mark unknown 404 stub 888 and metadata-bearing 11 as missing, then suppress & unsuppress
+    store.mark_movie_missing(888, "https://oreno3d.com/movies/888")
+    store.mark_movie_missing(11, "https://oreno3d.com/movies/11")
+    store.suppress_movies([888, 11], reason="audit")
+    assert store.unsuppress_movies([888, 11]) == 2
+    assert store.conn.execute("SELECT 1 FROM movies WHERE source_site_id = 888").fetchone() is None
+    assert (
+        store.conn.execute("SELECT status FROM movies WHERE source_site_id = 11").fetchone()[0] == "missing"
+    )
+
+    # Restore 11 as active so both authors exist
+    store.apply_movie_detail(
+        make_detail(11, title="Pure Dance Stage", author=(2, "Beta"), tags=[(2, "60fps")])
+    )
+    store.refresh_derived(full=True)
+
+    search = SearchStore(store.conn)
+    for token in ("M字", "I字", "ドM", "Mな", "第1", "1話"):
+        assert ids(search, q=token) == [10], token
+
+    # Disjunctive ANY facet on author_any=[1] keeps sibling Author 2 ("Beta") selectable
+    facets, _ = search.facet_counts(SearchFilters(author_any=[1]), limit=5, pinned={"authors": [1]})
+    assert {r.name for r in facets["authors"]} == {"Alpha", "Beta"}
+    store.close()
+
+    # ReadOnlyPool detects atomic file replacement and unlink
+    pool = ReadOnlyPool(db_file)
+    try:
+        assert pool.get().execute("SELECT COUNT(*) FROM movies").fetchone()[0] == 2
+        replacement = tmp_path / "replacement.sqlite3"
+        other = CrawlStore.open(replacement)
+        seed(other, (make_detail(99, title="Replaced DB"),))
+        other.close()
+        for suffix in ("-wal", "-shm"):
+            wal = db_file.with_name(db_file.name + suffix)
+            wal.unlink(missing_ok=True)
+        replacement.replace(db_file)
+        assert pool.get().execute("SELECT source_site_id FROM movies").fetchone()[0] == 99
+        db_file.unlink()
+        with pytest.raises(StorageError):
+            pool.get()
+    finally:
+        pool.close()

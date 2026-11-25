@@ -386,16 +386,24 @@ def _valid_webhook_url(url: str) -> bool:
     host = (parts.hostname or "").lower()
     if not host or parts.username or parts.password:
         return False
+    ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
+    if host != "localhost":
+        try:
+            ip_obj = ipaddress.ip_address(host)
+        except ValueError:
+            ip_obj = None
+    if ip_obj is not None and (
+        ip_obj.is_link_local
+        or ip_obj.is_unspecified
+        or ip_obj.is_multicast
+        or (ip_obj.is_reserved and not ip_obj.is_loopback)
+    ):
+        return False
     if parts.scheme == "https":
         return True
     if parts.scheme != "http":
         return False
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+    return host == "localhost" or (ip_obj is not None and ip_obj.is_loopback)
 
 
 def validate_config(config: DeployConfig) -> list[str]:

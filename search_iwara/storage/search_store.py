@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any, Final
 
 from ..models import (
@@ -25,6 +26,17 @@ MAX_QUERY_TOKENS: Final = 8
 TRIGRAM_MIN_LENGTH: Final = 3
 FACET_SAMPLE_CAP: Final = 2_000
 FACET_ORDER_KINDS: Final[tuple[EntityKind, ...]] = ("characters", "tags", "authors", "origins")
+
+
+def _without_disjunctive_any(filters: SearchFilters, kind: EntityKind) -> SearchFilters | None:
+    if kind == "characters" and filters.character_any:
+        return replace(filters, character_any=[])
+    if kind == "authors" and filters.author_any:
+        return replace(filters, author_any=[])
+    if kind == "origins" and filters.origin_any:
+        return replace(filters, origin_any=[])
+    return None
+
 
 # filter field -> (entity kind, mode)
 ENTITY_FILTERS: Final[tuple[tuple[str, EntityKind, str], ...]] = (
@@ -185,7 +197,7 @@ class SearchStore:
             ("favorite_count", filters.min_favorites, filters.max_favorites),
         ):
             if low is not None:
-                clauses.append(f"COALESCE(m.{column}, 0) >= ?")
+                clauses.append(f"m.{column} >= ?" if low > 0 else f"COALESCE(m.{column}, 0) >= ?")
                 params.append(low)
             if high is not None:
                 clauses.append(f"COALESCE(m.{column}, 0) <= ?")
@@ -275,6 +287,21 @@ class SearchStore:
 
     # --- dynamic facets ----------------------------------------------------------------------
 
+    def _sample_facet_matches(
+        self, filters: SearchFilters, *, sample_cap: int
+    ) -> tuple[list[int], Counter[int], bool]:
+        where_sql, params = self.build_where(filters)
+        sort_sql = SORT_CLAUSES[filters.sort]
+        matched = self.conn.execute(
+            f"SELECT m.id, m.author_id FROM movies m WHERE {where_sql} ORDER BY {sort_sql} LIMIT ?",
+            [*params, sample_cap + 1],
+        ).fetchall()
+        sampled = len(matched) > sample_cap
+        matched = matched[:sample_cap]
+        movie_ids = [int(r[0]) for r in matched]
+        author_counts = Counter(int(r[1]) for r in matched if r[1] is not None)
+        return movie_ids, author_counts, sampled
+
     def facet_counts(
         self,
         filters: SearchFilters,
@@ -283,26 +310,28 @@ class SearchStore:
         pinned: Mapping[EntityKind, Sequence[int]] | None = None,
         sample_cap: int = FACET_SAMPLE_CAP,
     ) -> tuple[dict[EntityKind, list[RankingRow]], bool]:
-        """Compute entity counts over matching movies (bounded to ``sample_cap`` for O(1) tail latency)."""
+        """Compute entity counts over matching movies (bounded to ``sample_cap`` for O(1) tail latency).
 
-        where_sql, params = self.build_where(filters)
-        sort_sql = SORT_CLAUSES[filters.sort]
-        matched = self.conn.execute(
-            f"SELECT m.id, m.author_id FROM movies m WHERE {where_sql} ORDER BY {sort_sql} LIMIT ?",
-            [*params, sample_cap + 1],
-        ).fetchall()
-        is_sampled = len(matched) > sample_cap
-        matched = matched[:sample_cap]
-        movie_ids = [int(r[0]) for r in matched]
-        author_counts = Counter(int(r[1]) for r in matched if r[1] is not None)
+        Disjunctive ``ANY`` dimensions (authors, characters, origins) omit their own ``*_any``
+        selection so sibling union candidates remain selectable alongside the active filter.
+        """
 
+        base_ids, base_authors, is_sampled = self._sample_facet_matches(filters, sample_cap=sample_cap)
         result: dict[EntityKind, list[RankingRow]] = {}
         for kind in FACET_ORDER_KINDS:
+            alt_filters = _without_disjunctive_any(filters, kind)
+            if alt_filters is not None:
+                kind_ids, kind_authors, kind_sampled = self._sample_facet_matches(
+                    alt_filters, sample_cap=sample_cap
+                )
+                is_sampled = is_sampled or kind_sampled
+            else:
+                kind_ids, kind_authors = base_ids, base_authors
             pinned_ids = list(dict.fromkeys((pinned or {}).get(kind, ())))
             result[kind] = self._facet_kind_rows(
                 kind,
-                movie_ids=movie_ids,
-                author_counts=author_counts,
+                movie_ids=kind_ids,
+                author_counts=kind_authors,
                 pinned_source_ids=pinned_ids,
                 limit=limit,
             )

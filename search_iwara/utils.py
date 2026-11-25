@@ -9,6 +9,8 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from urllib.parse import urlencode, urljoin, urlsplit
 
+SOURCE_HOSTS: tuple[str, ...] = ("oreno3d.com",)
+VIDEO_HOSTS: tuple[str, ...] = ("iwara.tv",)
 MOVIE_ID_RE = re.compile(r"/movies/(\d+)")
 ENTITY_ID_RE = re.compile(r"/(?:authors|tags|origins|characters)/(\d+)")
 MAX_SAFE_INTEGER = 2**53 - 1

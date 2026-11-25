@@ -5,6 +5,7 @@ Run with ``make e2e`` (installs the ``e2e`` dependency group and Chromium).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -324,21 +325,30 @@ def test_filter_sheet_single_keyword_sync_and_unclipped_combobox(page: Page, app
     page.locator('[data-dialog-open="filters"]').first.click()
     expect(page.locator("#filter-q")).to_have_count(0)
 
-    # Bottom combobox (#f-tag_not) opens downward below its own input AND unclipped above .sheet__foot
+    # Bottom combobox (#f-tag_not) opens upward (.is-dropup) without jump-scrolling .sheet__body
     tag_group = page.locator("dialog#filters details").filter(has=page.locator("#f-tag_not")).first
     if not page.locator("#f-tag_not").is_visible():
         tag_group.locator("summary").click()
+    body_el = page.locator("dialog#filters .sheet__body")
     combo = page.locator("#f-tag_not")
+    combo.scroll_into_view_if_needed()
+    scroll_before = body_el.evaluate("el => el.scrollTop")
     combo.click()
     popup = page.locator("dialog#filters .combo").filter(has=combo).locator(".combo__popup")
     expect(popup).to_be_visible()
+    expect(popup).to_have_class(re.compile(r"\bis-dropup\b"))
+    scroll_after = body_el.evaluate("el => el.scrollTop")
+    assert abs(scroll_after - scroll_before) <= 1, (scroll_before, scroll_after)
     combo_box = combo.bounding_box()
     popup_box = popup.bounding_box()
+    body_box = body_el.bounding_box()
     foot_box = page.locator("dialog#filters .sheet__foot").bounding_box()
     assert combo_box is not None
     assert popup_box is not None
+    assert body_box is not None
     assert foot_box is not None
-    assert popup_box["y"] >= combo_box["y"] + combo_box["height"] - 1, (combo_box, popup_box)
+    assert popup_box["y"] >= body_box["y"] - 1, (popup_box, body_box)
+    assert popup_box["y"] + popup_box["height"] <= combo_box["y"] + 1, (combo_box, popup_box)
     assert popup_box["y"] + popup_box["height"] <= foot_box["y"] + 1, (popup_box, foot_box)
 
     metrics_badge = page.locator('dialog#filters details[data-fgroup="metrics"] [data-fgroup-badge]')
@@ -389,9 +399,10 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     hermetic(context, app_url)
     page = context.new_page()
 
-    # Home: coarse targets >= 44x44px, brand mark visible, clear-all on-screen, generous search input width
+    # Home: coarse targets >= 44x44px, brand mark visible, clear-all on-screen, zero horizontal page overflow
     page.goto(app_url + "/?q=yelan&tag_all=31&tag_not=32&author_any=11&min_views=10")
     wait_ready(page)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     header_box = page.locator(".site-header").bounding_box()
     brand_box = page.locator(".site-header .brand").bounding_box()
     first_card_box = page.locator("main .card").first.bounding_box()
@@ -408,6 +419,22 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     expect(page.locator(".toolbar .segmented")).to_be_hidden()
     expect(page.locator("#sort-select option")).to_have_count(8)
 
+    # Verify short card tags (MMD, 60fps, etc.) and +N badges are never crushed or sliced on 390px/360px
+    tag_clips = page.evaluate(
+        """() => {
+            const out = [];
+            for (const el of document.querySelectorAll('.card__tags .tag__text, .card__tags .tag--more')) {
+                if (el.offsetParent === null) continue;
+                const txt = el.textContent.trim();
+                if ((txt.length <= 6 || txt.startsWith('+')) && el.scrollWidth > el.clientWidth + 1) {
+                    out.push({ txt, clientW: el.clientWidth, scrollW: el.scrollWidth });
+                }
+            }
+            return out;
+        }"""
+    )
+    assert tag_clips == [], tag_clips
+
     visible_text_w = page.locator("#site-search").evaluate(
         """el => {
             const st = getComputedStyle(el);
@@ -417,10 +444,11 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     assert visible_text_w >= 165, visible_text_w
     _assert_all_targets(page, 43.5)
 
-    # Even on 360px narrow mobile in English with active badge, unified sort + .filter-trigger fit cleanly
+    # Even on 360px narrow mobile in English with 4 active chips, zero docScrollWidth overflow
     page.set_viewport_size({"width": 360, "height": 800})
-    page.goto(app_url + "/?lang=en&q=yelan&tag_all=31&min_views=10")
+    page.goto(app_url + "/?lang=en&q=yelan&tag_all=31&tag_not=32&author_any=11&min_views=10")
     wait_ready(page)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     sort_box = page.locator("#sort-select").bounding_box()
     ft_metrics = page.locator(".toolbar .filter-trigger").evaluate(
         """el => {
@@ -436,24 +464,36 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     page.goto(app_url + "/?q=yelan&tag_all=31&min_views=10")
     wait_ready(page)
 
-    # Mobile filter sheet: downward unclipped bottom combobox popup + all targets >= 44x44px
+    # Mobile filter sheet: upward (.is-dropup) unclipped bottom combobox popup without jump-scroll + >= 44x44px
     page.locator(".toolbar .filter-trigger").click()
     expect(page.locator("dialog#filters")).to_be_visible()
     tag_group = page.locator("dialog#filters details").filter(has=page.locator("#f-tag_not")).first
     if not page.locator("#f-tag_not").is_visible():
         tag_group.locator("summary").click()
+    m_body = page.locator("dialog#filters .sheet__body")
     m_combo = page.locator("#f-tag_not")
+    m_combo.scroll_into_view_if_needed()
+    m_scroll_before = m_body.evaluate("el => el.scrollTop")
     m_combo.click()
     popup = page.locator("dialog#filters .combo").filter(has=m_combo).locator(".combo__popup")
     expect(popup).to_be_visible()
+    m_scroll_after = m_body.evaluate("el => el.scrollTop")
+    assert abs(m_scroll_after - m_scroll_before) <= 1, (m_scroll_before, m_scroll_after)
     m_combo_box = m_combo.bounding_box()
     m_popup_box = popup.bounding_box()
+    m_body_box = m_body.bounding_box()
     m_foot_box = page.locator("dialog#filters .sheet__foot").bounding_box()
     assert m_combo_box is not None
     assert m_popup_box is not None
+    assert m_body_box is not None
     assert m_foot_box is not None
-    assert m_popup_box["y"] >= m_combo_box["y"] + m_combo_box["height"] - 1, (m_combo_box, m_popup_box)
+    assert m_popup_box["y"] >= m_body_box["y"] - 1, (m_popup_box, m_body_box)
     assert m_popup_box["y"] + m_popup_box["height"] <= m_foot_box["y"] + 1, (m_popup_box, m_foot_box)
+    is_dropup = popup.evaluate("el => el.classList.contains('is-dropup')")
+    if is_dropup:
+        assert m_popup_box["y"] + m_popup_box["height"] <= m_combo_box["y"] + 1, (m_combo_box, m_popup_box)
+    else:
+        assert m_popup_box["y"] >= m_combo_box["y"] + m_combo_box["height"] - 1, (m_combo_box, m_popup_box)
     _assert_all_targets(page, 43.5, "dialog#filters")
     page.keyboard.press("Escape")
     page.keyboard.press("Escape")
@@ -474,9 +514,11 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     page.keyboard.press("Escape")
     page.set_viewport_size(MOBILE)
 
-    # Detail: h1 title and primary Watch CTA appear ABOVE author comment on mobile; all targets >= 44x44px
+    # Detail: h1 title and primary Watch CTA appear ABOVE author comment on mobile; zero horizontal overflow
     page.goto(app_url + "/movies/200")
     wait_ready(page)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    expect(page.locator("[data-back-search]")).to_be_hidden()
     h1_box = page.locator("h1.detail__title").bounding_box()
     cta_box = page.locator(".detail__actions .btn").first.bounding_box()
     comment_box = page.locator(".detail__comment").bounding_box()
@@ -488,7 +530,10 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     assert headings[0] == "H1"
     _assert_all_targets(page, 43.5)
 
-    # Rankings: 2-row compact mobile layout keeps ALL 3 metrics (works + unit, likes, views) visible
+    # Rankings (/tags & /authors): 2-row compact mobile layout & zero horizontal overflow on /authors
+    page.goto(app_url + "/authors")
+    wait_ready(page)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.goto(app_url + "/tags")
     wait_ready(page)
     table_box = page.locator(".rank-table").bounding_box()
@@ -524,9 +569,18 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     assert op_gap >= 3.5, op_gap
     tablet.close()
 
-    # Fine desktop: all interactive controls >= 24x24px; primary ranking hides duplicate dir-tabs
+    # Fine desktop: all interactive controls >= 24x24px; /tags, /categories, and /authors hide duplicate dir-tabs & never overflow
     fine_page = open_page(browser, app_url, "/", viewport=DESKTOP, scheme="dark")
     _assert_all_targets(fine_page, 23.5)
+    fine_page.goto(app_url + "/authors")
+    wait_ready(fine_page)
+    assert fine_page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    author_cta = fine_page.locator(".author-row__head .btn").first.bounding_box()
+    assert author_cta is not None
+    assert author_cta["x"] + author_cta["width"] <= 1440, author_cta
+    fine_page.goto(app_url + "/categories")
+    wait_ready(fine_page)
+    expect(fine_page.locator(".dir-tabs")).to_be_hidden()
     fine_page.goto(app_url + "/tags")
     wait_ready(fine_page)
     expect(fine_page.locator(".dir-tabs")).to_be_hidden()

@@ -10,8 +10,7 @@ import logging
 import sqlite3
 from collections.abc import Callable
 
-from ..parsers import SOURCE_HOSTS, VIDEO_HOSTS
-from ..utils import decode_source_escapes, safe_url
+from ..utils import SOURCE_HOSTS, VIDEO_HOSTS, decode_source_escapes, safe_url
 from .connection import trigram_supported
 from .search_index import (
     STREAM_BATCH_SIZE,
@@ -19,13 +18,11 @@ from .search_index import (
     movie_search_short_ddl,
     optimize_indexes,
     rebuild_all_indexes,
-    rebuild_short_index,
 )
 from .sql import (
     ACTIVE_MOVIES_REFRESH,
     ENTITY_STATS_REFRESH,
     HOT_SCORE_UPDATE,
-    SEARCH_DOCUMENT_SELECT,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,19 +177,13 @@ def _v2_search_stats_and_indexes(conn: sqlite3.Connection) -> None:
     ):
         conn.execute(statement)
 
-    # 5. Full-text search over title + author/character/origin/tag names (streamed in chunks).
+    # 5. Full-text search DDL (populated in a single streamed pass in v5).
     tokenizer = "trigram" if trigram_supported() else "unicode61"
     if tokenizer != "trigram":
         logger.warning(
             "SQLite < 3.34: trigram tokenizer unavailable, CJK substring search falls back to LIKE"
         )
     conn.execute(movie_search_ddl(tokenizer))
-    cursor = conn.execute(f"{SEARCH_DOCUMENT_SELECT} WHERE m.status = 'active'")
-    while batch := cursor.fetchmany(STREAM_BATCH_SIZE):
-        conn.executemany(
-            "INSERT INTO movie_search(rowid, title, keywords) VALUES (?, ?, ?)",
-            ((int(r[0]), str(r[1]), str(r[2])) for r in batch),
-        )
 
     # 6. Materialised read models and run history.
     conn.execute(
@@ -239,9 +230,6 @@ def _v2_search_stats_and_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT INTO app_meta(key, value) VALUES ('fts_tokenizer', ?)", (tokenizer,))
 
     _sanitise_urls(conn)
-    conn.execute(HOT_SCORE_UPDATE)
-    for statement in ENTITY_STATS_REFRESH:
-        conn.execute(statement)
 
 
 def _v3_cjk_index_tiebreakers_and_run_stats(conn: sqlite3.Connection) -> None:
@@ -255,9 +243,8 @@ def _v3_cjk_index_tiebreakers_and_run_stats(conn: sqlite3.Connection) -> None:
     for column in ("requests", "retries", "throttled"):
         conn.execute(f"ALTER TABLE sync_runs ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE sync_runs ADD COLUMN status_codes TEXT")
-    # Short-token index: CJK unigrams/bigrams + words with 1/2-char prefix indexes.
+    # Short-token index DDL (populated together with movie_search in v5).
     conn.execute(movie_search_short_ddl())
-    rebuild_short_index(conn)
     # Comments were stored with literal "\n" escapes (as rendered by the source site).
     conn.execute(
         "UPDATE movies SET author_comment = REPLACE(author_comment, '\\n', char(10)) "
@@ -282,7 +269,7 @@ def _table_sql(conn: sqlite3.Connection, name: str) -> str:
 
 
 def _v5_compact_fts_author_index_and_counts(conn: sqlite3.Connection) -> None:
-    """Upgrade v4 databases to compact active-only FTS5, composite author index and O(1) counts."""
+    """Upgrade databases to compact active-only FTS5, composite author index and O(1) counts."""
 
     # 1. Replace single-column author_id index with one that also serves top-N per author in order.
     conn.execute("DROP INDEX IF EXISTS idx_movies_author_id")
@@ -291,13 +278,20 @@ def _v5_compact_fts_author_index_and_counts(conn: sqlite3.Connection) -> None:
         "ON movies(author_id, status, popularity DESC, source_site_id DESC)"
     )
 
-    # 2. Rebuild FTS tables if upgrading from v4's uncompacted/unfiltered DDL; otherwise optimize.
+    # 2. Build/rebuild FTS tables if DDL changed or any active/legacy FTS rows exist.
     tokenizer = "trigram" if trigram_supported() else "unicode61"
     expected_main = movie_search_ddl(tokenizer)
     expected_short = movie_search_short_ddl()
+    has_active = conn.execute("SELECT 1 FROM movies WHERE status = 'active' LIMIT 1").fetchone() is not None
+    fts_has_rows = (
+        conn.execute("SELECT 1 FROM movie_search LIMIT 1").fetchone() is not None
+        or conn.execute("SELECT 1 FROM movie_search_short LIMIT 1").fetchone() is not None
+    )
     if (
         _table_sql(conn, "movie_search") != expected_main
         or _table_sql(conn, "movie_search_short") != expected_short
+        or has_active
+        or fts_has_rows
     ):
         rebuild_all_indexes(conn, tokenizer=tokenizer)
     else:

@@ -354,18 +354,19 @@ function initCombobox(container) {
   syncHidden();
 
   const positionPopup = () => {
+    popup.classList.remove("is-dropup", "is-compact");
+    const fieldRect = input.getBoundingClientRect();
     const scroller = container.closest(".sheet__body");
-    if (scroller instanceof HTMLElement) {
-      popup.classList.remove("is-dropup");
-      popup.classList.add("is-compact");
-      const scrollerRect = scroller.getBoundingClientRect();
-      const overflow = popup.getBoundingClientRect().bottom + 8 - scrollerRect.bottom;
-      if (overflow > 0) {
-        scroller.scrollBy({ top: overflow, behavior: prefersReducedMotion() ? "instant" : "auto" });
-      }
-      return;
-    }
-    popup.classList.toggle("is-compact", window.innerHeight - input.getBoundingClientRect().bottom < 240);
+    const boundsTop = scroller instanceof HTMLElement ? scroller.getBoundingClientRect().top : 0;
+    const boundsBottom =
+      scroller instanceof HTMLElement ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+    const spaceBelow = boundsBottom - fieldRect.bottom - 8;
+    const spaceAbove = fieldRect.top - boundsTop - 8;
+    const needed = Math.max(popup.offsetHeight, 188);
+    const dropUp = spaceBelow < needed && spaceAbove > spaceBelow;
+    popup.classList.toggle("is-dropup", dropUp);
+    const avail = dropUp ? spaceAbove : spaceBelow;
+    popup.classList.toggle("is-compact", avail < 236);
   };
 
   /** @param {boolean} expanded */
@@ -583,7 +584,7 @@ function initCombobox(container) {
     const resolvers = formResolvers.get(parentForm) ?? [];
     resolvers.push(() => {
       const pending = input.value.trim();
-      if (!pending || !options.length) return;
+      if (!pending || !options.length) return true;
       const picked =
         (active >= 0 ? options[active] : undefined) ??
         options.find((item) => item.name.toLocaleLowerCase() === pending.toLocaleLowerCase()) ??
@@ -591,13 +592,22 @@ function initCombobox(container) {
       if (picked) {
         addChip(picked);
         input.value = "";
+        return true;
       }
+      // Multiple distinct candidates match this prefix: prompt explicit choice instead of arbitrary LIMIT 1.
+      const group = container.closest("details");
+      if (group instanceof HTMLDetailsElement) group.open = true;
+      setExpanded(true);
+      setActive(0);
+      input.focus();
+      announceCount(options.length);
+      return false;
     });
     formResolvers.set(parentForm, resolvers);
   }
 }
 
-/** @type {WeakMap<HTMLFormElement, Array<() => void>>} */
+/** @type {WeakMap<HTMLFormElement, Array<() => boolean>>} */
 const formResolvers = new WeakMap();
 
 /** @param {HTMLFormElement} form */
@@ -685,7 +695,9 @@ function initFilterForms() {
       ) {
         syncedQ.value = siteSearch.value;
       }
-      for (const resolvePending of formResolvers.get(form) ?? []) resolvePending();
+      for (const resolvePending of formResolvers.get(form) ?? []) {
+        if (!resolvePending()) return;
+      }
       const params = new URLSearchParams();
       for (const [key, rawValue] of new FormData(form).entries()) {
         if (typeof rawValue !== "string") continue;
@@ -764,6 +776,7 @@ function setCsvIds(params, key, ids) {
 
 /** @param {string} savedHref */
 function enhanceTaxonomyOps(savedHref) {
+  document.querySelector("[data-taxonomy]")?.classList.add("has-search-context");
   const baseParams = new URL(savedHref, window.location.origin).searchParams;
   baseParams.delete("page");
   baseParams.delete("lang");
@@ -830,14 +843,16 @@ function initSearchContext() {
       }
       return;
     }
-    if (document.referrer) {
-      const ref = new URL(document.referrer);
-      const fromSearchOrDetail =
-        ref.origin === window.location.origin && (ref.pathname === "/" || ref.pathname.startsWith("/movies/"));
-      if (!fromSearchOrDetail) {
-        sessionStorage.removeItem("lastSearchHref");
-        return;
-      }
+    if (!document.referrer) {
+      sessionStorage.removeItem("lastSearchHref");
+      return;
+    }
+    const ref = new URL(document.referrer);
+    const fromSearchOrDetail =
+      ref.origin === window.location.origin && (ref.pathname === "/" || ref.pathname.startsWith("/movies/"));
+    if (!fromSearchOrDetail) {
+      sessionStorage.removeItem("lastSearchHref");
+      return;
     }
     const saved = sessionStorage.getItem("lastSearchHref");
     if (saved && saved.startsWith("/") && !saved.startsWith("//")) {

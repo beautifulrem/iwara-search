@@ -687,3 +687,29 @@ def test_dynamic_workbench_unmatched_chips_directory_search_and_pending_detail(
     pending_detail = assert_html(client.get("/movies/999?lang=en"))
     assert "Metadata pending" in pending_detail
     assert "tax-chip is-static" in pending_detail
+    assert "Referer" in client.get("/movies/999").headers["vary"]
+
+    # 5. CJK prose / fullwidth punctuation without spaces after https:// URLs is never swallowed
+    from search_iwara.web.formatting import linkify_comment
+
+    linked = str(
+        linkify_comment(
+            "お借りしたもの https://example.jp/credits/tree。にて。配布：https://bowlroll.net/file/12密码0401"
+        )
+    )
+    assert 'href="https://example.jp/credits/tree"' in linked
+    assert 'href="https://bowlroll.net/file/12"' in linked
+    assert "。にて。" in linked
+
+    # 6. /movies/{id} returns 404 (never 304) on If-None-Match: * for non-existent or suppressed movies,
+    #    and same-second suppression immediately invalidates index ETag via data_revision.
+    assert client.get("/movies/9999999", headers={"If-None-Match": "*"}).status_code == 404
+    detail_etag = client.get("/movies/999").headers["etag"]
+    index_etag = client.get("/").headers["etag"]
+    seeded.suppress_movies([999])
+    assert client.get("/movies/999", headers={"If-None-Match": detail_etag}).status_code == 404
+    assert client.get("/", headers={"If-None-Match": index_etag}).status_code == 200
+
+    # 7. HEAD matches GET on canonical 303 redirects
+    assert client.head("/?q=", follow_redirects=False).status_code == 303
+    assert client.head("/tags?sort=popularity", follow_redirects=False).status_code == 303

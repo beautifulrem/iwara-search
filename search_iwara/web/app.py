@@ -24,10 +24,9 @@ from starlette.types import Scope
 
 from .. import __version__
 from ..config import PACKAGE_ROOT, Settings, get_settings
-from ..parsers import SOURCE_HOSTS, VIDEO_HOSTS
 from ..storage import RankingStore, ReadOnlyPool, connect, migrate
 from ..storage.search_store import uses_trigram
-from ..utils import safe_url
+from ..utils import SOURCE_HOSTS, VIDEO_HOSTS, safe_url
 from . import api, ops, pages
 from .context import AppState, ErrorContext, TTLCache, base_context, request_lang
 from .formatting import (

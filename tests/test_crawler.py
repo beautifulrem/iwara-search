@@ -371,3 +371,29 @@ def test_redirects_validate_origin_robots_and_hop_limit(tmp_path) -> None:  # ty
 
     with pytest.raises(ResponseTooLargeError):
         run(make_settings(tmp_path), huge_response, lambda c: c.fetch_movie_detail(101))
+
+    # 6. TLS downgrade (https -> http) and non-origin port redirects are blocked
+    def downgrade_redirect(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(301, headers={"Location": "http://oreno3d.com/movies/101"})
+
+    with pytest.raises(UnsafeRedirectError, match="TLS downgrade"):
+        run(make_settings(tmp_path), downgrade_redirect, lambda c: c.fetch_movie_detail(101))
+
+    def port_redirect(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(301, headers={"Location": "https://oreno3d.com:8443/movies/101"})
+
+    with pytest.raises(UnsafeRedirectError, match="non-origin port"):
+        run(make_settings(tmp_path), port_redirect, lambda c: c.fetch_movie_detail(101))
+
+    # 7. Malformed non-ASCII digit Content-Length ("²", 0xb2) does not raise ValueError
+    import asyncio
+
+    raw_resp = httpx.Response(200, headers=[(b"content-length", b"\xb2")], content=b"ok")
+    body = asyncio.run(
+        Oreno3dClient._read_bounded_body(raw_resp, url="https://oreno3d.com/movies/101", max_bytes=100)
+    )
+    assert body == b"ok"

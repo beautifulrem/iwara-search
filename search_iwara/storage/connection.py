@@ -93,10 +93,23 @@ class ReadOnlyPool:
         self._lock = threading.Lock()
 
     def get(self) -> sqlite3.Connection:
+        try:
+            st = self.db_path.stat()
+        except OSError as exc:
+            raise StorageError(f"database {self.db_path} is unavailable: {exc}") from exc
+        current_inode = (st.st_dev, st.st_ino)
         connection: sqlite3.Connection | None = getattr(self._local, "connection", None)
+        cached_inode: tuple[int, int] | None = getattr(self._local, "inode", None)
+        if connection is not None and cached_inode != current_inode:
+            with self._lock:
+                if connection in self._all:
+                    self._all.remove(connection)
+            connection.close()
+            connection = None
         if connection is None:
             connection = connect(self.db_path, readonly=True)
             self._local.connection = connection
+            self._local.inode = current_inode
             with self._lock:
                 self._all.append(connection)
         return connection

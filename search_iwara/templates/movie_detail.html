@@ -96,15 +96,16 @@
         </div>
       </dl>
 
-      <dl class="taxonomy">
+      <dl class="taxonomy{% if has_search_context %} has-search-context{% endif %}" data-taxonomy>
         {% for row in taxonomy_rows %}
         <div class="taxonomy__row">
           <dt>{{ ui.icon(row.icon) }}{{ tr(row.label_key) }}</dt>
           <dd>
             {% for item in row["items"] %}
             {% if item.id is not none %}
-            {% set inc_label = tr("workbench.include_tag", name=item.name) if item.is_req else tr("workbench.include_entity", name=item.name) %}
-            {% set exc_label = tr("workbench.exclude_entity", name=item.name) %}
+            {% set inc_base = tr("workbench.include_tag", name=item.name) if item.is_req else tr("workbench.include_entity", name=item.name) %}
+            {% set inc_label = tr("workbench.remove_filter", name=item.name) if item.include_active else inc_base %}
+            {% set exc_label = tr("workbench.remove_filter", name=item.name) if item.exclude_active else tr("workbench.exclude_entity", name=item.name) %}
             <span class="tax-chip{% if item.is_req %} tax-chip--require{% endif %}{% if item.include_active %} is-included{% elif item.exclude_active %} is-excluded{% endif %}">
               <a class="tax-chip__name" href="{{ item.solo_href }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
               <a class="tax-chip__op tax-chip__op--inc{% if item.is_req %} tax-chip__op--req{% endif %}{% if item.include_active %} is-active{% endif %}"

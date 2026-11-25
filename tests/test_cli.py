@@ -198,7 +198,9 @@ def test_db_suppress_unsuppress_and_reindex(tmp_path: Path) -> None:
     code, _ = invoke("db", "unsuppress", "0", "--db-path", str(db_file))
     assert code == cli.EXIT_CONFIG
 
-    code, out = invoke("db", "suppress", "101", "102", "--db-path", str(db_file))
+    code, out = invoke(
+        "db", "suppress", "101", "102", "--reason", "rights request", "--db-path", str(db_file)
+    )
     assert code == 0
     assert "suppressed 2" in out
     code, out = invoke("db", "unsuppress", "101", "--db-path", str(db_file))
@@ -207,3 +209,16 @@ def test_db_suppress_unsuppress_and_reindex(tmp_path: Path) -> None:
     code, out = invoke("db", "reindex", "--verify", "--db-path", str(db_file))
     assert code == 0
     assert "verified=True" in out
+
+    # All write-mutating db commands exit cleanly with EXIT_LOCKED (75) when sync_lock is held
+    from search_iwara.services import sync_lock
+
+    with sync_lock(db_file):
+        for subcmd in (
+            ["db", "refresh", "--db-path", str(db_file)],
+            ["db", "reindex", "--db-path", str(db_file)],
+            ["db", "suppress", "105", "--db-path", str(db_file)],
+            ["db", "unsuppress", "102", "--db-path", str(db_file)],
+        ):
+            locked_code, _ = invoke(*subcmd)
+            assert locked_code == cli.EXIT_LOCKED, subcmd

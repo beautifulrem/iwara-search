@@ -164,6 +164,18 @@ def check_service_access(config: DeployConfig) -> None:
             "under /home, its parent directories are usually 0750; move it to /opt/search-iwara or "
             "grant o+x on the parents."
         )
+    if config.deploy_mode == "nginx":
+        static_dir = Path(config.app_dir) / "search_iwara" / "static"
+        try:
+            chain = [static_dir, *static_dir.parents]
+            blocked = any(p.exists() and (p.stat().st_mode & 0o001) == 0 for p in chain if str(p) != "/")
+        except OSError:
+            blocked = False
+        if blocked:
+            print(
+                f"warning: {static_dir} has a parent directory without o+x; nginx may fail to serve "
+                "/static/ directly. Move the checkout to /opt/search-iwara or grant o+x on parents."
+            )
 
 
 def migrate_database(config: DeployConfig) -> None:

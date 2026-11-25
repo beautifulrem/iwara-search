@@ -36,6 +36,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -43,14 +44,34 @@ raw_url = os.environ["SEARCH_IWARA_ALERT_WEBHOOK"].strip()
 parts = urllib.parse.urlsplit(raw_url)
 host = (parts.hostname or "").lower()
 is_loopback = host == "localhost"
-if not is_loopback and host:
+ip_disallowed = False
+if host and not is_loopback:
     try:
-        is_loopback = ipaddress.ip_address(host).is_loopback
+        ip_obj = ipaddress.ip_address(host)
+        is_loopback = ip_obj.is_loopback
+        ip_disallowed = (
+            ip_obj.is_link_local
+            or ip_obj.is_unspecified
+            or ip_obj.is_multicast
+            or (ip_obj.is_reserved and not ip_obj.is_loopback)
+        )
     except ValueError:
         is_loopback = False
-if not host or (parts.scheme != "https" and not (parts.scheme == "http" and is_loopback)):
+if (
+    not host
+    or parts.username
+    or parts.password
+    or ip_disallowed
+    or (parts.scheme != "https" and not (parts.scheme == "http" and is_loopback))
+):
     print(f"<3>search-iwara ALERT: refusing unsafe webhook URL scheme/host: {parts.scheme}://{host}")
     sys.exit(1)
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: PLR0913, ANN001, ANN201
+        raise urllib.error.HTTPError(req.full_url, code, f"refusing webhook redirect ({code})", headers, fp)
+
 
 safe_url = urllib.parse.urlunsplit(
     (
@@ -75,8 +96,9 @@ request = urllib.request.Request(
     headers={"Content-Type": "application/json", "User-Agent": "search-iwara-alert"},
     method="POST",
 )
+opener = urllib.request.build_opener(_NoRedirectHandler)
 try:
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with opener.open(request, timeout=10) as response:
         print(f"alert webhook delivered: HTTP {response.status}")
 except Exception as exc:  # noqa: BLE001 - report any delivery failure to the journal
     print(f"<3>search-iwara ALERT: webhook delivery failed: {exc}")

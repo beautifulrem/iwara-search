@@ -14,7 +14,7 @@
       </p>
     </header>
 
-    <nav class="dir-tabs{% if entity_kind == 'categories' %} dir-tabs--always{% endif %}" aria-label="{{ tr('entity.directory_aria') }}">
+    <nav class="dir-tabs" aria-label="{{ tr('entity.directory_aria') }}">
       {% for tab in ranking_tabs %}
       <a class="dir-tabs__item" href="{{ tab.href }}"{% if tab.active %} aria-current="page"{% endif %}>
         {{ ui.icon(tab.icon) }}<span>{{ tr("entity." ~ tab.kind) }}</span>
@@ -86,7 +86,8 @@
       <details class="author-works"{% if rank <= 3 or ranking_q %} open{% endif %}>
         <summary class="author-works__summary">
           {{ ui.icon("chevron-down", "author-works__chevron") }}
-          <span>{{ tr("entity.works_toggle", count=movies|length, shown=movies|length|number) }}</span>
+          <span class="author-works__label-closed">{{ tr("entity.works_toggle", count=movies|length, shown=movies|length|number) }}</span>
+          <span class="author-works__label-open">{{ tr("entity.works_hide", count=movies|length, shown=movies|length|number) }}</span>
         </summary>
         <div class="rail" role="region" aria-label="{{ tr('entity.works_of', name=item.name) }}" tabindex="0">
           {% for movie in movies %}

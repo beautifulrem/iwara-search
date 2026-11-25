@@ -106,3 +106,94 @@ def test_run_alert_rejects_unsafe_file_webhook(tmp_path: Path):
     )
     assert res.returncode == 1
     assert "refusing unsafe webhook URL" in res.stdout
+
+
+def test_run_alert_rejects_metadata_ip_and_http_redirect(tmp_path: Path):
+    import http.server
+    import os
+    import threading
+
+    for bad_url in ("https://169.254.169.254/latest/meta-data/", "https://user:pw@example.com/hook"):
+        res = subprocess.run(
+            ["bash", str(DEPLOY_DIR / "run-alert.sh"), "search-iwara-sync.service"],
+            env={**os.environ, "APP_DIR": str(REPO_ROOT), "SEARCH_IWARA_ALERT_WEBHOOK": bad_url},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res.returncode == 1
+        assert "refusing unsafe webhook URL" in res.stdout
+
+    class _RedirectHandler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.send_response(302)
+            self.send_header("Location", "http://169.254.169.254/latest")
+            self.end_headers()
+
+        def log_message(self, fmt: str, *args: object) -> None:
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _RedirectHandler)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    try:
+        res = subprocess.run(
+            ["bash", str(DEPLOY_DIR / "run-alert.sh"), "search-iwara-sync.service"],
+            env={
+                **os.environ,
+                "APP_DIR": str(REPO_ROOT),
+                "SEARCH_IWARA_ALERT_WEBHOOK": f"http://127.0.0.1:{srv.server_port}/hook",
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res.returncode == 1
+        assert "refusing webhook redirect" in res.stdout
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_sync_loop_forwards_sigterm_to_running_child(tmp_path: Path):
+    import os
+    import signal
+    import time
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    term_flag = tmp_path / "child_got_term"
+    fake_cli = bin_dir / "search-iwara"
+    fake_cli.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo 0.2.2; exit 0; fi\n'
+        f"trap 'touch \"{term_flag}\"; exit 143' TERM INT\n"
+        "sleep 30 &\n"
+        "wait $!\n",
+        encoding="utf-8",
+    )
+    fake_cli.chmod(0o755)
+    proc = subprocess.Popen(
+        ["sh", str(REPO_ROOT / "deploy" / "docker" / "sync-loop.sh")],
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "SYNC_DRIFT_MARKER": str(tmp_path / ".drift"),
+        },
+    )
+    try:
+        for _ in range(30):
+            # Wait until child sleep is spawned
+            children = subprocess.run(
+                ["ps", "--ppid", str(proc.pid), "-o", "pid="], capture_output=True, text=True, check=False
+            ).stdout.strip()
+            if children:
+                break
+            time.sleep(0.05)
+        proc.send_signal(signal.SIGTERM)
+        code = proc.wait(timeout=3)
+        assert code == 0
+        assert term_flag.exists()
+    finally:
+        if proc.poll() is None:
+            proc.kill()

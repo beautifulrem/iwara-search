@@ -17,14 +17,18 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Sequence
 from typing import Final
 
 from .connection import contentless_delete_supported, trigram_supported
 from .sql import SEARCH_DOCUMENT_SELECT
 
 # Hiragana, Katakana (+ phonetic ext.), CJK Ext-A, CJK Unified, Compatibility, Hangul syllables.
-CJK_RUN_RE: Final = re.compile(
-    r"[\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+"
+_CJK_CHARS: Final = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af"
+CJK_RUN_RE: Final = re.compile(rf"[{_CJK_CHARS}]+")
+# Overlapping 2-char boundary pairs between CJK and non-CJK word chars ("M字", "ドM", "第1", "1話").
+MIXED_BIGRAM_RE: Final = re.compile(
+    rf"(?=([{_CJK_CHARS}][^\W_{_CJK_CHARS}]|[^\W_{_CJK_CHARS}][{_CJK_CHARS}]))"
 )
 STREAM_BATCH_SIZE: Final = 5_000
 
@@ -45,11 +49,19 @@ def cjk_grams(text: str) -> str:
     return " ".join(grams)
 
 
+def mixed_grams(text: str) -> str:
+    """De-duplicated 2-character CJK↔alphanumeric boundary tokens (e.g. ``M字``, ``第1``, ``1話``)."""
+
+    grams = {match.group(1): None for match in MIXED_BIGRAM_RE.finditer(text)}
+    return " ".join(grams)
+
+
 def short_token_document(title: str, keywords: str) -> str:
-    """Document for ``movie_search_short``: CJK n-grams followed by the non-CJK words."""
+    """Document for ``movie_search_short``: CJK n-grams, mixed boundary bigrams, and non-CJK words."""
 
     text = f"{title} {keywords}"
-    return f"{cjk_grams(text)} {CJK_RUN_RE.sub(' ', text)}".strip()
+    parts = (cjk_grams(text), mixed_grams(text), CJK_RUN_RE.sub(" ", text))
+    return " ".join(part for part in parts if part).strip()
 
 
 def movie_search_ddl(tokenizer: str | None = None, *, compact: bool | None = None) -> str:
@@ -90,6 +102,31 @@ def index_movie(conn: sqlite3.Connection, movie_id: int) -> None:
     )
 
 
+def index_movies_batch(conn: sqlite3.Connection, movie_ids: Sequence[int]) -> None:
+    """Batch-reindex a bounded list of movie IDs using ``executemany``."""
+
+    if not movie_ids:
+        return
+    for offset in range(0, len(movie_ids), 500):
+        chunk = list(dict.fromkeys(movie_ids[offset : offset + 500]))
+        id_params = [(mid,) for mid in chunk]
+        conn.executemany("DELETE FROM movie_search WHERE rowid = ?", id_params)
+        conn.executemany("DELETE FROM movie_search_short WHERE rowid = ?", id_params)
+        placeholders = ", ".join("?" * len(chunk))
+        rows = conn.execute(
+            f"{SEARCH_DOCUMENT_SELECT} WHERE m.id IN ({placeholders}) AND m.status = 'active'",
+            chunk,
+        ).fetchall()
+        if not rows:
+            continue
+        docs = [(int(r[0]), str(r[1]), str(r[2])) for r in rows]
+        conn.executemany("INSERT INTO movie_search(rowid, title, keywords) VALUES (?, ?, ?)", docs)
+        conn.executemany(
+            "INSERT INTO movie_search_short(rowid, terms) VALUES (?, ?)",
+            ((rowid, short_token_document(title, kw)) for rowid, title, kw in docs),
+        )
+
+
 def rebuild_short_index(conn: sqlite3.Connection) -> None:
     """Stream-populate ``movie_search_short`` from active movies in bounded memory chunks."""
 
@@ -120,6 +157,13 @@ def rebuild_all_indexes(conn: sqlite3.Connection, *, tokenizer: str | None = Non
         )
     optimize_indexes(conn)
     return tok
+
+
+def merge_indexes(conn: sqlite3.Connection, *, pages: int = 64) -> None:
+    """Bounded incremental FTS5 b-tree merge suitable for regular sync completion."""
+
+    conn.execute("INSERT INTO movie_search(movie_search, rank) VALUES ('merge', ?)", (pages,))
+    conn.execute("INSERT INTO movie_search_short(movie_search_short, rank) VALUES ('merge', ?)", (pages,))
 
 
 def optimize_indexes(conn: sqlite3.Connection) -> None:

@@ -174,6 +174,8 @@ class Oreno3dClient:
         if parsed_base.scheme not in {"http", "https"} or not parsed_base.hostname:
             raise CrawlerConfigError(f"invalid base_url: {self.base_url!r}")
         self._allowed_domain = _canonical_domain(parsed_base.hostname)
+        self._base_scheme = parsed_base.scheme.lower()
+        self._base_port = parsed_base.port
         self.stats = CrawlerStats()
         self._rng = rng or random.Random()  # noqa: S311 - jitter, not cryptography
         self._sleep: Callable[[float], Awaitable[None]] = sleep or asyncio.sleep
@@ -231,7 +233,8 @@ class Oreno3dClient:
 
     def _validate_target_url(self, url: str) -> None:
         parts = urlsplit(url)
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
+        scheme = parts.scheme.lower()
+        if scheme not in {"http", "https"} or not parts.hostname:
             raise UnsafeRedirectError(f"disallowed URL scheme or missing host: {url!r}")
         if parts.username or parts.password:
             raise UnsafeRedirectError(f"disallowed credentials in URL: {url!r}")
@@ -240,6 +243,14 @@ class Oreno3dClient:
             raise UnsafeRedirectError(
                 f"refusing off-origin request to {parts.hostname!r} (expected {self._allowed_domain!r})"
             )
+        if self._base_scheme == "https" and scheme != "https":
+            raise UnsafeRedirectError(f"refusing TLS downgrade redirect: {url!r}")
+        try:
+            port = parts.port
+        except ValueError as exc:
+            raise UnsafeRedirectError(f"invalid port in URL: {url!r}") from exc
+        if port not in {None, self._base_port}:
+            raise UnsafeRedirectError(f"refusing redirect to non-origin port {port}: {url!r}")
 
     # --- robots.txt --------------------------------------------------------------------------
 
@@ -287,8 +298,8 @@ class Oreno3dClient:
 
     @staticmethod
     async def _read_bounded_body(response: httpx.Response, *, url: str, max_bytes: int) -> bytes:
-        declared_len = response.headers.get("Content-Length")
-        if declared_len and declared_len.isdigit() and int(declared_len) > max_bytes:
+        declared_len = (response.headers.get("Content-Length") or "").strip()
+        if declared_len and ASCII_DIGITS_RE.fullmatch(declared_len) and int(declared_len) > max_bytes:
             raise ResponseTooLargeError(f"{url} Content-Length {declared_len} exceeds {max_bytes} bytes")
         chunks: list[bytes] = []
         received = 0

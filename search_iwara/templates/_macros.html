@@ -42,15 +42,19 @@
     {% if show_tags and movie.tags %}
     {% set extra_wide = movie.tags|length - 3 %}
     {% set extra_narrow = movie.tags|length - 2 %}
+    {% set extra_xs = movie.tags|length - 1 %}
     <ul class="card__tags" aria-label="{{ tr('detail.tag') }}">
       {% for tag in movie.tags[:3] %}
-      <li{% if loop.index == 3 %} class="card__tag-third"{% endif %}><a class="tag" href="/?tag_any={{ tag.id }}" title="{{ tag.name }}"{{ tag.name|lang_attr }}><span class="tag__text">{{ tag.name }}</span></a></li>
+      <li{% if loop.index == 2 %} class="card__tag-second"{% elif loop.index == 3 %} class="card__tag-third"{% endif %}><a class="tag" href="/?tag_any={{ tag.id }}" title="{{ tag.name }}"{{ tag.name|lang_attr }}><span class="tag__text">{{ tag.name }}</span></a></li>
       {% endfor %}
       {% if extra_wide > 0 %}
       <li class="card__tag-more card__tag-more--wide"><span class="tag tag--more" title="{{ tr('card.more_tags', count=extra_wide) }}">+{{ extra_wide }}<span class="sr-only"> {{ tr("card.more_tags", count=extra_wide) }}</span></span></li>
       {% endif %}
       {% if extra_narrow > 0 %}
       <li class="card__tag-more card__tag-more--narrow"><span class="tag tag--more" title="{{ tr('card.more_tags', count=extra_narrow) }}">+{{ extra_narrow }}<span class="sr-only"> {{ tr("card.more_tags", count=extra_narrow) }}</span></span></li>
+      {% endif %}
+      {% if extra_xs > 0 %}
+      <li class="card__tag-more card__tag-more--xs"><span class="tag tag--more" title="{{ tr('card.more_tags', count=extra_xs) }}">+{{ extra_xs }}<span class="sr-only"> {{ tr("card.more_tags", count=extra_xs) }}</span></span></li>
       {% endif %}
     </ul>
     {% endif %}
@@ -130,16 +134,17 @@
   {% if section["items"] %}
   <ul class="wb-list">
     {% for row in section["items"] %}
-    {% set inc_label = tr("workbench.include_tag", name=row.name) if is_req else tr("workbench.include_entity", name=row.name) %}
-    {% set exc_label = tr("workbench.exclude_entity", name=row.name) %}
+    {% set inc_base = tr("workbench.include_tag", name=row.name) if is_req else tr("workbench.include_entity", name=row.name) %}
+    {% set inc_label = tr("workbench.remove_filter", name=row.name) if row.include_active else inc_base %}
+    {% set exc_label = tr("workbench.remove_filter", name=row.name) if row.exclude_active else tr("workbench.exclude_entity", name=row.name) %}
     <li class="wb-row{% if is_req %} wb-row--require{% endif %}{% if row.include_active %} is-included{% elif row.exclude_active %} is-excluded{% endif %}">
       <a class="wb-row__link" href="{{ row.include_href }}" title="{{ inc_label }}"{{ row.name|lang_attr }}{% if row.include_active %} aria-current="true"{% endif %}>
         <span class="wb-row__name">{{ row.name }}</span>
         <span class="wb-row__count" title="{{ tr('entity.movie_count', count=row.movie_count, shown=row.movie_count|number) }}">{{ row.movie_count|compact }}</span>
       </a>
       <span class="wb-row__ops">
-        <a class="wb-op wb-op--inc{% if is_req %} wb-op--req{% endif %}{% if row.include_active %} is-active{% endif %}" href="{{ row.include_href }}" aria-label="{{ inc_label }}" title="{{ inc_label }}"{% if row.include_active %} aria-current="true"{% endif %}>{{ icon("plus") }}</a>
-        <a class="wb-op wb-op--exc{% if row.exclude_active %} is-active{% endif %}" href="{{ row.exclude_href }}" aria-label="{{ exc_label }}" title="{{ exc_label }}"{% if row.exclude_active %} aria-current="true"{% endif %}>{{ icon("minus") }}</a>
+        <a class="wb-op wb-op--inc{% if is_req %} wb-op--req{% endif %}{% if row.include_active %} is-active{% endif %}" href="{{ row.include_href }}" tabindex="-1" aria-label="{{ inc_label }}" title="{{ inc_label }}"{% if row.include_active %} aria-current="true"{% endif %}>{{ icon("check" if row.include_active else "plus") }}</a>
+        <a class="wb-op wb-op--exc{% if row.exclude_active %} is-active{% endif %}" href="{{ row.exclude_href }}" aria-label="{{ exc_label }}" title="{{ exc_label }}"{% if row.exclude_active %} aria-current="true"{% endif %}>{{ icon("x" if row.exclude_active else "minus") }}</a>
       </span>
     </li>
     {% endfor %}

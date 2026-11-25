@@ -53,6 +53,11 @@ VALUES ('active_movies', CAST((SELECT COUNT(*) FROM movies WHERE status = 'activ
 ON CONFLICT(key) DO UPDATE SET value = excluded.value
 """
 
+BUMP_DATA_REVISION: Final = """
+INSERT INTO app_meta(key, value) VALUES ('data_revision', '1')
+ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(app_meta.value AS INTEGER) + 1 AS TEXT)
+"""
+
 # One searchable document per movie: the title plus every human-facing name attached to it.
 SEARCH_DOCUMENT_SELECT: Final = """
 SELECT

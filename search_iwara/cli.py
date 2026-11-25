@@ -17,7 +17,7 @@ import logging
 import signal
 import sqlite3
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -312,6 +312,17 @@ def sync_full(
 # --- database maintenance ----------------------------------------------------------------------
 
 
+@contextlib.contextmanager
+def _cli_write_lock(db_path: Path) -> Iterator[None]:
+    try:
+        with sync_lock(db_path):
+            yield
+    except SyncLockedError as exc:
+        logger.warning("%s", exc)
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(EXIT_LOCKED) from exc
+
+
 @db_app.command("migrate")
 def db_migrate(db_path: DbPathOption = None) -> None:
     """Create the database or upgrade its schema (idempotent)."""
@@ -330,11 +341,12 @@ def db_refresh(db_path: DbPathOption = None) -> None:
     """Recompute hot scores and ranking statistics without crawling."""
 
     settings = _settings(db_path=db_path)
-    store = CrawlStore.open(settings.db_path)
-    try:
-        store.refresh_derived()
-    finally:
-        store.close()
+    with _cli_write_lock(settings.db_path):
+        store = CrawlStore.open(settings.db_path)
+        try:
+            store.refresh_derived()
+        finally:
+            store.close()
     typer.echo("derived data refreshed")
 
 
@@ -346,7 +358,7 @@ def db_reindex(
     """Rebuild and optimize full-text search indexes from active movies."""
 
     settings = _settings(db_path=db_path)
-    with sync_lock(settings.db_path):
+    with _cli_write_lock(settings.db_path):
         store = CrawlStore.open(settings.db_path)
         try:
             store.reindex_all(verify=verify)
@@ -359,6 +371,10 @@ def db_reindex(
 def db_suppress(
     source_ids: Annotated[list[int], typer.Argument(help="Oreno3D source movie ID(s) to suppress locally.")],
     db_path: DbPathOption = None,
+    reason: Annotated[
+        str | None,
+        typer.Option("--reason", "-r", help="Optional takedown/compliance note recorded locally."),
+    ] = None,
 ) -> None:
     """Permanently suppress movie IDs locally (takedown/opt-out); survives future syncs."""
 
@@ -366,10 +382,10 @@ def db_suppress(
         typer.echo("source IDs must be positive integers", err=True)
         raise typer.Exit(EXIT_CONFIG)
     settings = _settings(db_path=db_path)
-    with sync_lock(settings.db_path):
+    with _cli_write_lock(settings.db_path):
         store = CrawlStore.open(settings.db_path)
         try:
-            count = store.suppress_movies(source_ids, base_url=settings.base_url)
+            count = store.suppress_movies(source_ids, base_url=settings.base_url, reason=reason)
         finally:
             store.close()
     typer.echo(f"suppressed {count} movie(s)")
@@ -386,7 +402,7 @@ def db_unsuppress(
         typer.echo("source IDs must be positive integers", err=True)
         raise typer.Exit(EXIT_CONFIG)
     settings = _settings(db_path=db_path)
-    with sync_lock(settings.db_path):
+    with _cli_write_lock(settings.db_path):
         store = CrawlStore.open(settings.db_path)
         try:
             count = store.unsuppress_movies(source_ids)

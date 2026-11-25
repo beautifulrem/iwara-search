@@ -325,17 +325,18 @@ def pagination(current: int, total: int, query: dict[str, str], *, path: str = "
 
 
 def data_version(state: AppState) -> str:
-    """Changes whenever a sync run starts/finishes or derived data is refreshed."""
+    """Changes whenever a sync run starts/finishes, derived data refreshes, or rows mutate."""
 
     row = (
         state.pool.get()
         .execute(
             "SELECT (SELECT COALESCE(MAX(id), 0) FROM sync_runs), "
-            "(SELECT value FROM app_meta WHERE key = 'derived_refreshed_at')"
+            "(SELECT value FROM app_meta WHERE key = 'derived_refreshed_at'), "
+            "(SELECT COALESCE((SELECT value FROM app_meta WHERE key = 'data_revision'), '0'))"
         )
         .fetchone()
     )
-    return f"{row[0]}:{row[1]}"
+    return f"{row[0]}:{row[1]}:{row[2]}"
 
 
 # Cached read models are keyed by the data version, so they can never be older than the ETag
@@ -372,14 +373,17 @@ def apply_lang_cookie(request: Request, response: Response) -> None:
         )
 
 
-def not_modified(request: Request, etag: str) -> Response | None:
+def not_modified(request: Request, etag: str, *, extra_vary: str = "") -> Response | None:
     candidates = {tag.strip() for tag in request.headers.get("if-none-match", "").split(",")}
     if etag in candidates or "*" in candidates:
         # RFC 9110 §15.4.5: a 304 carries the same Vary/ETag/Cache-Control a 200 would,
         # and must still update the language cookie when ?lang= was explicitly requested.
+        vary = (
+            f"{PAGE_VARY}, {extra_vary}, Accept-Encoding" if extra_vary else f"{PAGE_VARY}, Accept-Encoding"
+        )
         response = Response(
             status_code=304,
-            headers={"ETag": etag, "Cache-Control": "no-cache", "Vary": f"{PAGE_VARY}, Accept-Encoding"},
+            headers={"ETag": etag, "Cache-Control": "no-cache", "Vary": vary},
         )
         apply_lang_cookie(request, response)
         return response

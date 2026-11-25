@@ -197,7 +197,7 @@ def _build_oracle_corpus() -> tuple[object, list[dict[str, object]]]:
         # Movie 7 triggers an upstream rename of Author 1 ("Kaede" -> "KaedeVFX") & Tag 5 ("RayTracing" -> "PathTracing")
         (
             7,
-            "Encore Night Stage 3D",
+            "Encore Night Stage 3D M字開脚 第1話 ドM",
             (1, "KaedeVFX"),
             [(1, "MMD"), (5, "PathTracing")],
             [(1, "Yelan")],
@@ -261,14 +261,15 @@ _ORACLE_STORE, _ORACLE_SPECS = _build_oracle_corpus()
 
 
 def _token_matches_doc(token: str, doc_text: str) -> bool:
-    from search_iwara.storage.search_index import CJK_RUN_RE, is_cjk
+    from search_iwara.storage.search_index import CJK_RUN_RE, is_cjk, mixed_grams
 
     if len(token) >= 3:
         return token.casefold() in doc_text.casefold()
     if is_cjk(token):
         return token in cjk_grams(doc_text).split()
+    mixed = [g.casefold() for g in mixed_grams(doc_text).split()]
     non_cjk_words = re.findall(r"[0-9A-Za-z]+", CJK_RUN_RE.sub(" ", doc_text))
-    return any(w.casefold().startswith(token.casefold()) for w in non_cjk_words)
+    return any(w.casefold().startswith(token.casefold()) for w in [*non_cjk_words, *mixed])
 
 
 @settings(max_examples=200)
@@ -281,6 +282,10 @@ def _token_matches_doc(token: str, doc_text: str) -> bool:
                 "４Ｋ",
                 "60",
                 "3d",
+                "M字",
+                "ドM",
+                "第1",
+                "1話",
                 "水着",
                 "夏",
                 "キヴォトス",

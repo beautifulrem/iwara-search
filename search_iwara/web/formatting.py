@@ -128,10 +128,8 @@ def lang_attribute(text: str | None, page_lang: str) -> Markup:
     return Markup(' lang="{}"').format(detected)
 
 
-HTTPS_URL_RE: Final = re.compile(r"""https://[^\s<>"'`]+""")
-TRAILING_PUNCT: Final = (
-    ".,;:!?)]}\u203a\u00bb\u3002\uff0c\u3001\uff1b\uff1a\uff01\uff1f\uff09\u3011\u300d\u300f\u300b"
-)
+HTTPS_URL_RE: Final = re.compile(r"https://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+")
+TRAILING_PUNCT: Final = ".,;:!?)]}"
 
 
 def _split_url_trailing_punct(raw: str) -> tuple[str, str]:

@@ -101,13 +101,14 @@ def render(
     *,
     etag: str | None = None,
     status_code: int = 200,
+    extra_vary: str = "",
 ) -> HTMLResponse:
     response = state.templates.TemplateResponse(request, template, dict(context), status_code=status_code)
     if etag is not None:
         response.headers["ETag"] = etag
         response.headers["Cache-Control"] = "no-cache"
     apply_lang_cookie(request, response)
-    response.headers["Vary"] = PAGE_VARY
+    response.headers["Vary"] = f"{PAGE_VARY}, {extra_vary}" if extra_vary else PAGE_VARY
     return response
 
 
@@ -384,7 +385,7 @@ def _blank_param_redirect(
     force_redirect: bool = False,
 ) -> RedirectResponse | None:
     needs_redirect = force_redirect or any(v == "" for v in request.query_params.values())
-    if request.method != "GET" or unmatched or not needs_redirect:
+    if request.method not in ("GET", "HEAD") or unmatched or not needs_redirect:
         return None
     redirect_query = dict(canonical)
     lang_param = request.query_params.get("lang")
@@ -475,7 +476,7 @@ def index(
         name: search.resolve_entities(ID_FILTER_KIND[name], getattr(filters, name))
         for name in ID_FILTER_FIELDS
     }
-    base = base_context(request, state, lang=lang, rankings=rankings, nav="search", canonical_query=canonical)
+    base = base_context(request, state, lang=lang, rankings=rankings, canonical_query=canonical, nav="search")
     empty_db = base["dataset"] is not None and base["dataset"].movie_count == 0
     active_chips = _active_filters(filters, selected, unmatched, tr)
     presets = _quick_presets(filters, query, tr)
@@ -615,14 +616,19 @@ def movie_detail(
     search: SearchDep,
     rankings: RankingDep,
 ) -> Response:
-    lang = request_lang(request)
-    back_href, has_search_context, ref_filters, ref_query = _resolve_back_search_context(request)
-    etag = page_etag(request, state, lang, extra=back_href)
-    if (cached := not_modified(request, etag)) is not None:
-        return cached
     movie = search.get_movie(source_site_id)
     if movie is None:
         raise HTTPException(status_code=404, detail="movie")
+    lang = request_lang(request)
+    back_href, has_search_context, ref_filters, ref_query = _resolve_back_search_context(request)
+    etag = page_etag(
+        request,
+        state,
+        lang,
+        extra=f"{back_href}|{movie.status}|{movie.detail_fetched_at or ''}",
+    )
+    if (cached := not_modified(request, etag, extra_vary="Referer")) is not None:
+        return cached
     base = base_context(
         request,
         state,
@@ -641,7 +647,7 @@ def movie_detail(
         "has_search_context": has_search_context,
         "taxonomy_rows": _detail_taxonomy(movie, ref_filters, ref_query),
     }
-    return render(request, state, "movie_detail.html", context, etag=etag)
+    return render(request, state, "movie_detail.html", context, etag=etag, extra_vary="Referer")
 
 
 # --- rankings --------------------------------------------------------------------------------
@@ -688,7 +694,7 @@ def _ranking_page(kind: RankingKind) -> Callable[..., Response]:
         needs_clean = any(v == "" for v in request.query_params.values()) or (
             request.query_params.get("sort") == DEFAULT_RANKING_SORT
         )
-        if request.method == "GET" and needs_clean:
+        if request.method in ("GET", "HEAD") and needs_clean:
             clean_query: dict[str, str] = {}
             if params.q:
                 clean_query["q"] = params.q

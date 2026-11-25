@@ -13,6 +13,8 @@ from selectolax.lexbor import LexborNode as Node
 
 from .models import EntityRef, ListingPage, MovieDetail, MovieListItem
 from .utils import (
+    SOURCE_HOSTS,
+    VIDEO_HOSTS,
     absolute_url,
     clean_multiline,
     clean_text,
@@ -22,8 +24,14 @@ from .utils import (
     safe_url,
 )
 
-SOURCE_HOSTS: tuple[str, ...] = ("oreno3d.com",)
-VIDEO_HOSTS: tuple[str, ...] = ("iwara.tv",)
+__all__ = [
+    "SOURCE_HOSTS",
+    "VIDEO_HOSTS",
+    "DetailUnavailableError",
+    "ParserDriftError",
+    "parse_listing_page",
+    "parse_movie_detail",
+]
 ICON_PREFIXES = {"face", "local_library", "accessibility_new", "local_offer"}
 PLACEHOLDER_PAGE_TITLES = {"|俺の3Dエロ動画", "｜俺の3Dエロ動画"}
 PAGE_PARAM_RE = re.compile(r"[?&]page=(\d+)")
