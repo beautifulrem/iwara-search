@@ -1,89 +1,44 @@
 # Troubleshooting
 
-### `sync` fails with "HTTP client dependency missing … socksio"
+### `sync` exits with code `2` ("parser drift")
 
-Your environment defines a SOCKS proxy (`ALL_PROXY=socks5://…`). Current releases ship
-`httpx[socks,http2]`, so run `uv sync` to install it. To bypass the environment proxy set
-`SEARCH_IWARA_TRUST_ENV=false`, or pin one explicitly with `SEARCH_IWARA_PROXY=socks5://host:port`.
+Oreno3D changed its HTML layout: a listing page had no movie grid, parsed to zero items, or 5 detail pages in one run lacked a title. Sync aborts immediately so corrupted records are never written, and existing data stays intact.
 
-### `sync` exits with code 2 ("parser drift")
+- On a deployed server or Docker stack, upgrade to the latest release (`sudo ./deploy/linux/manage.py update` or `docker compose pull && docker compose up -d`). In Docker, remove `/data/.sync-parser-drift` if needed after upgrading.
+- When developing a parser fix, compare `tests/fixtures/*.html` against the live markup, update `search_iwara/parsers.py`, and run `uv run pytest tests/test_parsers.py`.
 
-oreno3d.com changed its markup: a listing page had no movie grid, parsed to zero movies, or
-several detail pages had no title. Nothing is deleted; the run stops early so bad data is not
-written. Check `tests/fixtures/*.html` against the live site, update `parsers.py`, and run
-`uv run pytest tests/test_parsers.py`.
+### `sync` exits with code `75` ("lock held")
 
-### `sync` exits with code 75
+Another sync process (scheduled timer or manual run) already holds `<db>.sync.lock`. No action is required; `flock` releases the lock automatically when that process exits.
 
-Another sync (timer or manual) holds `<db>.sync.lock`. Wait for it to finish. The lock is an
-advisory `flock`, released automatically if the process dies.
+### `sync` exits with code `1`
 
-### `sync` exits with code 1
+Either a listing page failed, failed detail fetches exceeded `SEARCH_IWARA_SYNC_FAILURE_TOLERANCE`, or `robots.txt` returned `5xx`/`429`/network failure (per RFC 9309, unreachable `robots.txt` halts crawling for that run).
 
-Some listing pages failed, or more details failed than `SEARCH_IWARA_SYNC_FAILURE_TOLERANCE`.
-Failures are recorded and retried automatically on later runs with growing intervals:
+Inspect recent per-item errors in SQLite:
 
 ```bash
 sqlite3 data/oreno3d.sqlite3 \
   "SELECT entity_type, entity_id, error_type, attempts, next_retry_at FROM crawl_errors ORDER BY last_failed_at DESC LIMIT 20"
 ```
 
-Frequent `HTTP 429`/`503` means the site is throttling you: lower `SEARCH_IWARA_REQUEST_RATE`
-and `SEARCH_IWARA_REQUEST_CONCURRENCY`.
+Failed details retry automatically on subsequent runs with exponential backoff. If logs show repeated `HTTP 429` or `503` responses, lower `SEARCH_IWARA_REQUEST_RATE` and `SEARCH_IWARA_REQUEST_CONCURRENCY`.
 
-### `sync` exits with code 1 and "robots.txt … unreachable (RFC 9309)"
+### `sync` exits with code `143`
 
-The site answered robots.txt with a 5xx/429 or could not be reached. RFC 9309 requires a crawler
-to treat that as "everything disallowed", so the run stopped without crawling. It is retried on
-the next scheduled run; check your proxy settings if it persists.
+The process received `SIGTERM` or `SIGINT` (`systemctl stop`, `docker stop`, or unit timeout). All previously committed batches remain in SQLite, and the next run resumes from the last contiguous checkpoint.
 
-### `sync` exits with code 143
+### Crawler logs "Redirect target ... disallowed" or "Response body exceeded ..."
 
-The process received SIGTERM/SIGINT (`systemctl stop`, `docker stop`, the unit's
-`TimeoutStartSec`). Work committed so far is kept and the run is recorded as `failed`; the next
-run continues where it left off.
+`Oreno3dClient` blocks redirects that leave the configured `https` origin, violate `robots.txt` on any hop, or exceed 5 hops, and aborts streaming responses larger than `2 MiB` (`robots.txt`) or `10 MiB` (HTML). Persistent errors usually point to an intercepting captive portal or misconfigured proxy.
 
-### `/metrics` returns 404 or 401
+### SOCKS proxy errors during `sync`
 
-Without `SEARCH_IWARA_METRICS_TOKEN` only loopback clients can read metrics (404 for everyone
-else). With a token, send `Authorization: Bearer <token>` (401 otherwise). `/api/docs` returns 404
-unless `SEARCH_IWARA_API_DOCS_ENABLED=true`.
+If your shell sets `ALL_PROXY=socks5://...`, `httpx[socks,http2]` is included in standard dependencies; run `uv sync` if using an older virtual environment. Set `SEARCH_IWARA_TRUST_ENV=false` to ignore ambient proxy variables, or set `SEARCH_IWARA_PROXY=socks5://127.0.0.1:1080` explicitly.
 
-### `database is locked`
+### Hiding or restoring specific videos (takedowns)
 
-Readers never block the writer in WAL mode, and connections wait up to 10 s (`busy_timeout`).
-Persistent lock errors usually mean the database sits on a network filesystem (NFS/SMB) that
-does not support SQLite's locking — keep it on local disk.
-
-### Thumbnails do not load
-
-Thumbnails are hot-linked from oreno3d.com with `referrerpolicy="no-referrer"`. If they are
-blocked (network policy, the site's hot-link protection), cards show a placeholder instead.
-The page's Content-Security-Policy only allows images from `oreno3d.com`; adjust
-`web/security.py` if you proxy thumbnails elsewhere.
-
-### The UI shows "10,000+ results"
-
-Counting is capped at `SEARCH_IWARA_MAX_RESULT_WINDOW` to keep every query bounded. Narrow the
-search, or raise the window (deep pages get slower).
-
-### A one- or two-letter Latin word matches less than expected
-
-Tokens of three or more characters match anywhere (trigram substring search). One- and
-two-character CJK tokens match any occurrence too. One- and two-letter Latin tokens match the
-*start of a word* ("mm" finds "MMD" but not "summer") — substring matches that short are almost
-always noise. Type three letters for a substring match. On SQLite older than 3.34 (no trigram
-tokenizer) 3+ character tokens use a slower `LIKE` scan — upgrade SQLite/Python.
-
-### `readyz` returns 503 with a schema mismatch
-
-The database was migrated by a newer or older build. Run `search-iwara db migrate` with the
-current build (it refuses to downgrade a newer schema).
-
-### Hiding or restoring specific videos (takedowns / compliance)
-
-To remove one or more videos from search results, detail pages, autocomplete, rankings and sitemaps
-without losing a tombstone when future crawls see the listing again:
+To remove one or more works from search results, detail pages, autocomplete, rankings, and sitemaps without future syncs re-importing them:
 
 ```bash
 uv run search-iwara db suppress 123456 --reason "rightsholder request"
@@ -93,16 +48,39 @@ uv run search-iwara db unsuppress 123456
 
 ### Verifying or rebuilding full-text search indexes
 
-To check that `movie_search` and `movie_search_short` match the set of `active` movies (and have no
-pending deferred `fts_dirty` work), or to rebuild them cleanly in 5 000-row streaming batches:
+To verify that `movie_search` and `movie_search_short` match all `active` movies (with no pending deferred `fts_dirty` work), or to stream-rebuild them in 5,000-row batches:
 
 ```bash
 uv run search-iwara db reindex --verify
 uv run search-iwara db reindex
 ```
 
-### Crawler logs "Redirect target … disallowed" or "Response body exceeded …"
+### `/metrics` or `/api/docs` returns `404` / `401`
 
-`Oreno3dClient` blocks redirects that leave the configured `https` origin, violate `robots.txt` on
-any hop, or exceed 5 hops, and aborts responses larger than `2 MiB` (`robots.txt`) or `10 MiB`
-(HTML). Persistent errors usually indicate an intercepting captive portal or misconfigured proxy.
+- `/metrics` only answers loopback (`127.0.0.1` / `::1`) requests unless `SEARCH_IWARA_METRICS_TOKEN` is configured. With a token set, pass `Authorization: Bearer <token>` (`401` otherwise).
+- `/api/docs` is disabled by default; set `SEARCH_IWARA_API_DOCS_ENABLED=true` (or `--api-docs` in `install.sh`) to enable it.
+
+### `database is locked`
+
+WAL mode allows concurrent readers alongside one writer, with a `10 s` `busy_timeout`. Persistent lock errors almost always indicate that the SQLite file is stored on NFS, SMB, or another network filesystem without reliable POSIX locking. Store the database on local disk.
+
+### Thumbnails show placeholders instead of images
+
+Thumbnails load directly from `oreno3d.com` with `referrerpolicy="no-referrer"`. When upstream hot-link rules or local network policies block them, cards fall back to an inline placeholder frame. If you proxy thumbnails through your own domain, update `img-src` in `search_iwara/web/security.py`.
+
+### Result count displays `10,000+`
+
+`COUNT(*)` stops at `SEARCH_IWARA_MAX_RESULT_WINDOW` (default `10,000`) so broad queries stay fast. Add more filters or increase `SEARCH_IWARA_MAX_RESULT_WINDOW`.
+
+### Short 1–2 letter Latin queries do not match inside words
+
+Queries of 3+ characters use trigram substring matching, and 1–2 character CJK queries match anywhere via unigram/bigram tokens. One- and two-letter Latin tokens (`mm`, `3d`) intentionally match **word prefixes** (`mm` matches `MMD`, not `summer`) to avoid noisy partial hits. Enter at least 3 letters for mid-word Latin substrings.
+
+### `/readyz` returns `503` with schema mismatch
+
+The database file was opened against an unmigrated or newer schema version. Run `search-iwara db migrate` using the current application release (downgrading a newer schema is refused safely).
+
+### `systemd` service fails with `226/NAMESPACE` or `nginx` `403` on `/static/`
+
+- `226/NAMESPACE` or `Permission denied`: a parent directory above the checkout (commonly `/home/<user>`) lacks world-traverse (`o+x`) permission. Move the checkout to `/opt/search-iwara` and re-run `sudo ./deploy/linux/install.sh`.
+- `403` on `/static/`: ensure `nginx` can read `APP_DIR/search_iwara/static` (`chmod -R o+rX /opt/search-iwara`).

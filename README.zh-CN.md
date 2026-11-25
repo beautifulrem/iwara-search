@@ -1,216 +1,230 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" width="112" height="112" alt="Search Iwara 图标">
+<img src="docs/assets/logo.svg" width="96" height="96" alt="Search Iwara 图标">
 
 # Search Iwara
 
-**为 [Oreno3D](https://oreno3d.com/) 元数据本地镜像打造的快速、多维度搜索。**
-
-按标题、作者、角色、原作、标签找到想看的 MMD / 3D 视频——支持布尔筛选、区间筛选和排行榜，
-这些都是原站没有的能力。可自托管，数据只是一个 SQLite 文件。
+基于单文件 SQLite 的 [Oreno3D](https://oreno3d.com/) 元数据自托管索引与多维检索前端。
 
 [![CI](https://github.com/beautifulrem/iwara-search/actions/workflows/ci.yml/badge.svg)](https://github.com/beautifulrem/iwara-search/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/beautifulrem/iwara-search?color=d6146f&label=release)](https://github.com/beautifulrem/iwara-search/releases)
-[![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![mypy: strict](https://img.shields.io/badge/mypy-strict-2a6db2)](pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-f2c94c)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/beautifulrem/iwara-search?label=release&color=c91868)](https://github.com/beautifulrem/iwara-search/releases)
+[![Container](https://img.shields.io/badge/ghcr.io-amd64%20%7C%20arm64-24292f?logo=docker&logoColor=white)](https://github.com/beautifulrem/iwara-search/pkgs/container/iwara-search)
+[![Python](https://img.shields.io/badge/python-3.13%2B-3776ab?logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-4b5563)](LICENSE)
 
-[**在线示例（NSFW）**](https://zundamon.dpdns.org/) ·
-[快速开始](#快速开始) ·
-[部署](docs/linux-deploy.md) ·
-[架构](docs/architecture.md) ·
+[**在线演示（NSFW）**](https://zundamon.dpdns.org/) ·
+[快速上手](#快速上手) ·
+[部署指南](docs/linux-deploy.md) ·
+[配置说明](docs/configuration.md) ·
+[系统架构](docs/architecture.md) ·
+[性能基准](docs/benchmarks.md) ·
 [English](README.md) ·
 [LINUX DO](https://linux.do/)
 
 </div>
 
 > [!WARNING]
-> 索引的元数据和在线示例属于**成人内容**，请勿在办公或公共场合打开。
-> 本项目**不下载、不托管任何视频文件**，只对公开列出的元数据建立索引。
+> 源站元数据及在线演示站均包含**成人内容**，请勿在工作场所或公共场合打开。
+> 本项目**不下载、不缓存、不托管任何视频文件**，仅同步公开页面的元数据并提供外链跳转。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/home-dark.jpg">
-  <img alt="Search Iwara 搜索页：排行侧栏、排序标签与结果网格" src="docs/assets/screenshots/home-light.jpg">
+  <img alt="Search Iwara 搜索主页：左侧快捷分面栏、顶部排序工具栏与结果卡片网格" src="docs/assets/screenshots/home-light.jpg">
 </picture>
-<sub>截图使用虚构的、适合公开展示的演示数据和生成的插图，见 <a href="scripts/make_screenshots.py"><code>scripts/make_screenshots.py</code></a>。</sub>
+<p align="center"><sub>文档截图均使用 <a href="scripts/make_screenshots.py"><code>scripts/make_screenshots.py</code></a> 生成的脱敏演示数据渲染。</sub></p>
 
-## 亮点
+## 项目简介
 
-- 🔎 **一个搜索框搜全部**：同时匹配标题与作者、角色、原作、标签名；拉丁文和中日文都支持子串匹配，所有查询都走紧凑型 `contentless_delete` FTS5 索引（trigram + CJK n-gram）。
-- 🧩 **真正的筛选**：作者 / 原作 / 角色的包含与排除，标签的全含 / 任一 / 排除，发布日期、播放数、点赞数区间，以及跟随当前结果集实时联动的分面计数；每个生效条件都是可单独移除的 chip。
-- 📈 **八种排序与可检索目录**：飙升、热门、高赞、最新（以及按播放数和各升序），加权的相关视频，以及支持搜索与多维排序的角色 / 作者 / 标签 / 原作排行榜。
-- ✨ **现代、无障碍的界面**：浅色 / 深色 / 跟随系统主题，键盘可操作的自动补全，移动端底部面板，禁用 JavaScript 也能用，中文 / 日本語 / English；通过 axe WCAG 2.2 AA 自动检查。
-- 🤝 **礼貌、有界的爬虫**：每一跳重定向均遵守 robots.txt（RFC 9309）与源站域名白名单，流式限制响应体大小，自适应限速，带抖动并遵守 `Retry-After` 的重试，支持代理，全量抓取可续抓，站点改版时明确报错停止。
-- 🛠️ **为无人值守而生**：版本化迁移、在线备份、持久化下架墓碑（`db suppress`）、JSON 日志、健康检查、Prometheus 指标与告警规则、加固的 systemd 单元、Docker 镜像。
+原站 Oreno3D 适合浏览最新投稿或单个标签页，但在深度检索场景下存在明显局限：无法同时要求多个标签、无法排除特定作者或标签、不支持按播放量/点赞数/日期区间过滤、中日文子串检索受限，且原站稿件下架后历史元数据随之不可查。
+
+Search Iwara 将公开列表页与详情页同步到本地单个 SQLite 数据库（WAL + 紧凑型 `contentless_delete` FTS5），在此之上提供毫秒级响应的 Web 检索界面：
+
+- **中日英混合全文检索**：单个搜索框同时覆盖标题、作者、角色、原作与标签；底层采用双 FTS5 表（3 字符以上走 `trigram` 子串索引，1–2 个中日文字符走 `unicode61` 词元索引），不退化为全表扫描。
+- **动态分面与布尔组合**：支持标签必含（`ALL`）/ 任一（`ANY`）/ 排除（`NOT`），支持作者、角色、原作的包含与排除，以及日期、播放量、点赞数区间过滤；左侧分面计数随当前检索结果实时联动，且支持一键 `+`（加入条件）与 `−`（排除条件）。
+- **可检索目录与归档保留**：内置 8 种排序、支持按名称搜索与多维排序的 5 类实体目录（角色、作者、标签、原作、分类）、抑制高频泛用词的相关推荐、原站删稿后的归档状态保留（`missing`），以及跨同步持久生效的本地屏蔽机制（`db suppress`）。
+- **渐进增强与无障碍支持**：服务端直出 HTML（FastAPI + Jinja2），禁用 JavaScript 时仍可正常检索与按名称匹配实体；支持 `zh-Hans` / `ja` / `en` 三语切换、浅色/深色主题、键盘导航，并通过 Chromium、Firefox、WebKit 三端 `axe-core` WCAG 2.2 AA 自动化校验。
+- **受控、可续传的同步器**：逐跳校验最多 5 次重定向的 `robots.txt`（RFC 9309）与 `https` 域名白名单，流式限制响应体体积，遇到 `429`/`503` 自动降速并遵守 `Retry-After`，支持 HTTP / SOCKS5 代理；全量抓取支持断点续传，源站改版时以退出码 `2` 安全停机。
+- **轻量单机运维**：无需额外部署 Redis 或外部搜索引擎；内置支持压缩的 SQLite 在线热备、磁盘余量保护、JSON 日志、`/healthz` + `/readyz` + `/metrics` 探针、Prometheus 告警规则、`systemd` + `nginx` 部署脚本，以及预构建的 `linux/amd64`、`linux/arm64` 多架构容器镜像。
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/screenshots/filters-dark.jpg" alt="分组的包含 / 排除筛选面板，含已选 chip"></td>
-    <td width="50%"><img src="docs/assets/screenshots/detail-light.jpg" alt="视频详情页：统计、元数据与链接"></td>
+    <td width="50%"><img src="docs/assets/screenshots/filters-dark.jpg" alt="布尔筛选抽屉与已生效筛选条件"></td>
+    <td width="50%"><img src="docs/assets/screenshots/detail-light.jpg" alt="详情页元数据、实体一键加减与相关作品"></td>
   </tr>
   <tr>
-    <td align="center"><sub>带自动补全的分组布尔筛选</sub></td>
-    <td align="center"><sub>详情页：元数据与相关视频</sub></td>
+    <td align="center"><sub>布尔筛选抽屉与已生效条件标签</sub></td>
+    <td align="center"><sub>详情页元数据、实体一键筛选与相关推荐</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/assets/screenshots/mobile-dark.jpg" width="260" alt="移动端搜索结果，命中词高亮">
+  <img src="docs/assets/screenshots/mobile-dark.jpg" width="260" alt="移动端搜索结果与关键词高亮">
   &nbsp;&nbsp;
-  <img src="docs/assets/screenshots/mobile-filters-light.jpg" width="260" alt="移动端底部筛选面板">
+  <img src="docs/assets/screenshots/mobile-filters-light.jpg" width="260" alt="移动端底部筛选抽屉">
 </p>
 
-## 快速开始
+## 快速上手
 
-需要 Python 3.13 和 [uv](https://docs.astral.sh/uv/)。
+### 方式一：Docker Compose（推荐，预构建 `amd64` / `arm64` 镜像）
+
+无需克隆源码，下载 `compose.yaml` 即可启动 Web 服务（默认监听 `http://127.0.0.1:8000`）、启动即执行的 6 小时周期增量同步与每日自动备份：
 
 ```bash
-git clone https://github.com/beautifulrem/iwara-search.git && cd iwara-search
+mkdir search-iwara && cd search-iwara
+curl -fsSLO https://raw.githubusercontent.com/beautifulrem/iwara-search/main/compose.yaml
+docker compose up -d
+```
+
+如需建立完整历史索引库（支持中断后续传，在默认温和限速下耗时数小时）：
+
+```bash
+docker compose exec sync search-iwara sync full
+```
+
+### 方式二：源码运行
+
+需要 Python 3.13+ 与 [uv](https://docs.astral.sh/uv/)：
+
+```bash
+git clone https://github.com/beautifulrem/iwara-search.git
+cd iwara-search
 uv sync
-uv run search-iwara sync latest --max-pages 3   # 抓取最新影片（约 1 分钟）
-uv run search-iwara serve                       # → http://127.0.0.1:8000
+uv run search-iwara sync latest --max-pages 3   # 抓取最近 3 页索引（约 1 分钟）
+uv run search-iwara serve                       # 访问 http://127.0.0.1:8000
 ```
 
-或者用 Docker（Web 界面、定时同步、每日备份）：
+### 方式三：Linux 服务器部署（`systemd` + `nginx`）
 
 ```bash
-docker compose up -d                            # → http://127.0.0.1:8000
+sudo git clone https://github.com/beautifulrem/iwara-search.git /opt/search-iwara
+sudo /opt/search-iwara/deploy/linux/install.sh --server-name search.example.com --sync-hours 6
 ```
 
-需要完整镜像时运行 `uv run search-iwara sync full`。它可以续抓：随时中断，再次运行会从停下的地方继续。
+也可直接运行交互式管理工具 `sudo /opt/search-iwara/deploy/linux/manage.py` 配置域名、HTTPS 证书、代理、定时任务与一键升级。详见 [docs/linux-deploy.md](docs/linux-deploy.md)。
 
 > [!NOTE]
-> **请负责任地抓取。** 默认参数有意保守：4 个并发、每秒最多 2 个请求、如实的 User-Agent、遵守 robots.txt、遇到 HTTP 429/503 自动降速，因此全量抓取需要数小时。请保持这样，并遵守站点的使用条款。
+> **抓取礼仪：** 默认参数（最多 `4` 并发、上限 `2.0` 请求/秒、启用 `robots.txt`、遇到 `429`/`503` 自动减半限速）有意保持温和，请勿盲目调高并发，共同维护源站可用性。
 
-## 使用
+## 命令行与查询语法
+
+### CLI 子命令
+
+| 命令 | 说明 |
+|---|---|
+| `search-iwara sync latest [--stable-pages N] [--max-pages N]` | 增量同步：连续 `N` 页未出现新作品 ID 即停止（默认 `3`） |
+| `search-iwara sync full [--start-page N] [--max-pages N]` | 全量抓取，自动记录检查点并支持断点续传 |
+| `search-iwara db migrate` | 初始化或升级 SQLite 表结构至 v5（幂等） |
+| `search-iwara db backup [--dest DIR] [--keep N] [--compress]` | 在线一致性备份（含 `PRAGMA quick_check` 校验、磁盘余量检查与轮转） |
+| `search-iwara db refresh` | 重新计算实体榜单、JST 飙升热度分并整理 FTS 分段 |
+| `search-iwara db reindex [--verify]` | 按 5,000 行批次流式重建 FTS5 搜索索引，或 `--verify` 校验索引一致性 |
+| `search-iwara db suppress <id...> [--reason TEXT]` | 在搜索、榜单、API 与 Sitemap 中屏蔽指定作品 ID（跨同步持久生效） |
+| `search-iwara db unsuppress <id...>` | 解除作品屏蔽并恢复索引与榜单统计 |
+| `search-iwara serve [--host] [--port] [--reload]` | 启动 FastAPI Web 服务 |
+
+同步退出码：`0` 正常完成；`1` 列表失败、详情失败数超出容忍阈值或 `robots.txt` 不可达；`2` 源站页面结构变更（触发解析保护）；`75` 已有同步进程持有文件锁；`78` 配置参数非法；`143` 收到 `SIGTERM`/`SIGINT` 安全退出（已提交进度完整保留）。
 
 <details>
-<summary><b>命令行</b></summary>
+<summary><b>URL 查询参数与检索示例</b></summary>
 
-| 命令 | 用途 |
+所有搜索状态均编码在 `/` 的查询参数中；实体目录页（`/characters`、`/authors`、`/tags`、`/origins`、`/categories`）同样支持 `?q=<名称>` 与 `?sort=hot|popularity|count|favorites|views`。
+
+| 维度 | 参数 |
 |---|---|
-| `search-iwara sync latest [--stable-pages N] [--max-pages N]` | 增量同步：连续 N 页没有新影片即停止 |
-| `search-iwara sync full [--start-page N] [--max-pages N]` | 可续抓的全量同步 |
-| `search-iwara db migrate` | 创建或升级数据库结构（幂等） |
-| `search-iwara db backup [--dest DIR] [--keep N]` | 一致性在线备份并轮转 |
-| `search-iwara db refresh` | 重算排行与飙升分 |
-| `search-iwara db reindex [--verify]` | 流式重建 FTS5 搜索索引（或校验在库活跃影片一致性） |
-| `search-iwara db suppress <id...> [--reason TEXT]` | 在搜索、排行、API 与 Sitemap 中隐藏指定影片（跨同步持久保留） |
-| `search-iwara db unsuppress <id...>` | 恢复已隐藏影片并重新纳入索引与排行 |
-| `search-iwara serve [--host] [--port] [--reload]` | 启动 Web 界面 |
+| 文本搜索 | `q`（匹配标题、作者、角色、原作、标签名，最长 200 字符）、`title_mode=all\|any` |
+| 作者 / 角色 / 原作 | `author_any`、`author_not`、`character_any`、`character_not`、`origin_any`、`origin_not` |
+| 标签布尔逻辑 | `tag_all`（必须同时包含）、`tag_any`（命中任一）、`tag_not`（排除指定标签） |
+| 区间范围 | `published_from`、`published_to`（`YYYY-MM-DD`）、`min_views`、`max_views`、`min_favorites`、`max_favorites` |
+| 排序与分页 | `sort=hot\|popularity\|favorites\|latest\|views`（及 `*_desc` / `*_asc`）、`page`、`lang=zh-Hans\|ja\|en` |
 
-两个 sync 命令都支持 `--request-concurrency` 与 `--request-rate`。退出码：`0` 成功；`1` 失败超过容忍度或 robots.txt 不可达；`2` 站点结构变化；`75` 已有同步在运行；`78` 配置无效；`143` 被 SIGTERM 终止（已提交的进度会保留）。
+实体参数使用逗号分隔的源站数字 ID（单参数最多 20 个）：
 
-</details>
-
-<details>
-<summary><b>搜索参数与示例</b></summary>
-
-所有筛选都是 `/` 的查询参数，任何搜索都可以直接分享 URL。实体目录页（`/characters`、`/authors`、`/tags`、`/categories`）同样支持 `?q=`（名称过滤）与 `?sort=hot|popularity|count|favorites|views`。
-
-| 类别 | 参数 |
-|---|---|
-| 文本 | `q`（匹配标题与各类名称，≤ 200 字符）、`title_mode=all\|any` |
-| 作者 · 原作 · 角色 | `author_any` `author_not` · `origin_any` `origin_not` · `character_any` `character_not` |
-| 标签 | `tag_all`、`tag_any`、`tag_not` |
-| 区间 | `published_from`、`published_to`（`YYYY-MM-DD`）、`min_views`、`max_views`、`min_favorites`、`max_favorites` |
-| 排序 | `sort=hot\|popularity\|favorites\|latest\|views`，或 `…_desc` / `…_asc` |
-| 其他 | `page`、`lang=zh-Hans\|ja\|en` |
-
-ID 列表为逗号分隔的源站 ID，每个参数最多 20 个。
-
-```
-/?q=Yelan                                   标题或名称包含 "Yelan"
-/?author_any=4972&sort=hot                  指定作者，按飙升排序
-/?origin_any=276&character_any=1470         指定原作与角色
-/?tag_any=2,3&tag_not=84                    任一标签，但排除标签 84
+```text
+/?q=Yelan                                       标题或任意关联名称包含 "Yelan"
+/?author_any=4972&sort=hot                      指定作者，按近期飙升排序
+/?origin_any=276&character_any=1470             限定指定原作与角色
+/?tag_all=302,303&tag_not=84                    同时包含标签 302 与 303，且排除标签 84
 /?min_views=1000&min_favorites=100&sort=popularity
-/authors?q=studio&sort=popularity           搜索并按综合热度排序作者目录
+/authors?q=studio&sort=popularity               搜索并按热门分排序作者目录
 ```
 
 </details>
 
 <details>
-<summary><b>评分与排行</b></summary>
+<summary><b>排序评分与相关推荐公式</b></summary>
 
-所有排行都基于**本地已抓取的数据**计算，并不等同于原站的全站排行。
+所有排行均依据**本地已同步数据集**计算：
 
-| 排序 | 公式 |
+| 排序 | 计算方式 |
 |---|---|
-| 高赞 | `favorite_count DESC` |
-| 最新 | `published_at DESC` |
-| 热门 | `view_count + favorite_count × 50` |
-| 飙升 | `热门分 / (发布后小时数 + 6)`，每次同步后刷新 |
+| 高赞 (`favorites`) | `favorite_count DESC` |
+| 最新 (`latest`) | `published_at DESC` |
+| 热门 (`popularity`) | `view_count + favorite_count * 50` |
+| 飙升 (`hot`) | `popularity / (距 JST 发布时间小时数 + 6)`，每次同步结束后刷新 |
 
-**相关视频**（最多 12 个）：同作者 +10，每个共同角色或原作 +5，每个共同标签 +1；同分按热门分排序。关联超过全库 5% 影片的实体会被忽略。
+**相关作品**（每页最多 12 条）：同作者 `+10`、每个共同角色或原作 `+5`、每个共同标签 `+1`，同分按热门分排序；覆盖全库超过 5% 作品的高频泛用实体自动忽略，避免泛化标签稀释推荐准确度。
 
 </details>
 
-## 工作原理
+## 架构概览与文档索引
 
 ```mermaid
 flowchart LR
-    site[(oreno3d.com)] -->|礼貌的爬虫| sync[同步流水线]
-    sync -->|批量提交| db[(SQLite · WAL<br/>FTS5 · 读模型)]
-    db -->|只读连接池| web[FastAPI + Jinja]
-    web --> you([浏览器])
+    site[(oreno3d.com)] -->|限速抓取| sync[同步流水线]
+    sync -->|事务批量写入| db[(SQLite WAL<br/>FTS5 + entity_stats)]
+    db -->|只读连接池| web[FastAPI + Jinja2]
+    web --> client([浏览器])
 ```
 
-批量爬虫和 Web 应用共用一个 SQLite 数据库，不需要额外运维队列、搜索引擎或缓存服务。列表页与详情页经过有界流水线并批量提交；排行是预先计算的读模型；每种查询都有索引支撑。数据库结构、同步算法、礼貌性与安全模型的完整说明见 [docs/architecture.md](docs/architecture.md)。
+同步进程扫描列表页、通过有界工作池抓取详情、校验每一跳重定向与 `https` 域名白名单，并按 25 条一批提交写入；Web 进程在启动时完成幂等迁移后，为每个工作线程维护独立的 `PRAGMA query_only` 只读连接，配合弱 `ETag` 协商缓存与严格 `Content-Security-Policy` 响应头提供低延迟读取。
 
-## 部署
-
-| 目标 | 方式 |
+| 文档 | 内容说明 |
 |---|---|
-| Linux 服务器 | `sudo ./deploy/linux/install.sh --sync-hours 6`：加固的 systemd 单元、nginx、备份、告警；或交互式的 `sudo ./deploy/linux/manage.py`。→ [docs/linux-deploy.md](docs/linux-deploy.md) |
-| Docker | `docker compose up -d` → [docs/linux-deploy.md#docker](docs/linux-deploy.md#docker) |
-| 配置 | 所有配置都是 `SEARCH_IWARA_*` 环境变量 → [docs/configuration.md](docs/configuration.md) |
-| 监控 | `/healthz`、`/readyz`、`/metrics`，以及 [Prometheus 告警规则](deploy/prometheus/alerts.yml) |
-| 故障排查 | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| [docs/linux-deploy.md](docs/linux-deploy.md) | Docker Compose、`systemd` + `nginx` 部署脚本、`manage.py`、TLS、备份恢复与监控告警 |
+| [docs/configuration.md](docs/configuration.md) | 全部 `SEARCH_IWARA_*` 环境变量、数据库维护命令与退出码对照表 |
+| [docs/architecture.md](docs/architecture.md) | 模块边界、Schema v5 数据模型、双 FTS5 索引、断点续传算法与 Web 安全设计 |
+| [docs/benchmarks.md](docs/benchmarks.md) | 20 万条作品规模下的存储占用、查询延迟与并发吞吐实测数据 |
+| [docs/design.md](docs/design.md) | 前端布局架构、OKLCH 色彩令牌、分面交互约定与前端工程约束 |
+| [docs/accessibility.md](docs/accessibility.md) | WCAG 2.2 AA 自动化检查覆盖范围、读屏器回归清单与已知限制 |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 代理连接、SQLite 锁冲突、下架屏蔽、索引校验与常见退出码排查手册 |
 
-## 开发
+## 本地开发
 
 ```bash
 uv sync && uv run pre-commit install
-make check   # ruff · mypy --strict · tsc --checkJs · 测试（覆盖率门槛 95%）
-make perf    # 20 万影片合成库上的延迟预算
-make e2e     # Playwright 端到端 + axe 无障碍测试
-make serve   # 带自动重载的开发服务器（:8765）
+make check   # 代码格式、ruff、mypy --strict、tsc --checkJs 及单测覆盖率门槛（>= 95%）
+make perf    # 20 万条合成作品库上的查询与派生表刷新延迟基准
+make e2e     # Playwright 浏览器端到端与 axe-core 无障碍测试
+make serve   # 启动带自动重载的本地开发服务（http://127.0.0.1:8765）
 ```
 
 <details>
-<summary><b>项目结构</b></summary>
+<summary><b>目录结构</b></summary>
 
-```
+```text
 search_iwara/
-  cli.py               Typer 命令行（sync / db / serve），退出码稳定
-  config.py            经过校验的配置（SEARCH_IWARA_* 环境变量）
-  crawler.py           礼貌的 HTTP 客户端：robots.txt、自适应限速、重试
-  parsers.py           HTML 转为数据模型，URL 白名单，站点改版检测
-  services.py          同步流水线：列表扫描 → 详情 worker → 批量提交
-  storage/             SQLite：迁移、写模型、全文索引维护、读模型
-  web/                 FastAPI 应用、页面、API、运维端点、安全与指标中间件
-  templates/, static/  Jinja 模板、CSS、ES 模块、图标
-  i18n.py, locales/    翻译文案（zh-Hans、ja、en）与语言协商
-tests/                 单元、属性、集成、页面快照、性能与浏览器测试
-deploy/                systemd、nginx、部署管理器、Docker 辅助脚本、Prometheus 规则
-scripts/               生成图标、演示截图与 20 万级基准测试脚本
-docs/                  架构、ADR、配置、部署、可访问性、基准报告与故障排查
+  cli.py               Typer 命令行入口（sync / db / serve）与退出码映射
+  config.py            基于 pydantic-settings 的 SEARCH_IWARA_* 配置校验
+  crawler.py           HTTP/2 客户端：robots.txt、重定向校验、AIMD 动态限速、重试
+  parsers.py           selectolax (Lexbor) 页面解析、URL 白名单与改版漂移检测
+  services.py          同步编排：列表扫描、有界详情队列、文件锁与续传检查点
+  storage/             Schema v5 迁移、写入模型、双 FTS5 索引维护、检索与榜单只读查询
+  web/                 FastAPI 应用工厂、页面与补全接口、运维探针、CSP 与指标中间件
+  templates/, static/  Jinja2 模板、分层原生 CSS、带类型检查的 ES 模块、SVG 图标精灵
+  i18n.py, locales/    多语言协商与翻译词表（zh-Hans、ja、en）
+deploy/                systemd 单元、nginx 模板、manage.py、Docker 循环脚本、Prometheus 规则
+scripts/               发版辅助脚本、20 万级基准测试、品牌图标与脱敏截图生成脚本
+tests/                 单元、Hypothesis 属性测试、部署脚本测试、20 万级性能测试与三端 E2E 测试
 ```
 
 </details>
 
-## 参与贡献
+## 参与贡献与安全反馈
 
-欢迎提交 Issue 和 Pull Request，开始前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题见 [SECURITY.md](SECURITY.md)；可访问性范围与已知限制见 [docs/accessibility.md](docs/accessibility.md)；更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+提交 Issue 或 Pull Request 前请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。如发现安全漏洞，请按 [SECURITY.md](SECURITY.md) 指引通过私密渠道披露。版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
-## 致谢
+## 声明与致谢
 
-- [Oreno3D](https://oreno3d.com/)、[Iwara](https://www.iwara.tv/) 及其创作者：所有元数据与缩略图归各自所有者。
-- 基于 [FastAPI](https://fastapi.tiangolo.com/)、[SQLite FTS5](https://www.sqlite.org/fts5.html)、[HTTPX](https://www.python-httpx.org/)、[selectolax](https://github.com/rushter/selectolax)、[Typer](https://typer.tiangolo.com/) 和 [uv](https://github.com/astral-sh/uv) 构建。
-- 菱形镜片图标是原创设计，致敬 3D / MMD 文化中常见的棱角分明的低多边形符号。本项目与 Oreno3D、Iwara 无隶属或背书关系。
+索引中的作品元数据与缩略图版权均归 [Oreno3D](https://oreno3d.com/)、[Iwara](https://www.iwara.tv/) 及原作者所有。本项目为独立开源工具，与 Oreno3D 和 Iwara 无任何隶属或官方合作关系。
 
 ## 许可证
 

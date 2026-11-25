@@ -1,97 +1,87 @@
 # Configuration
 
-All settings are read from `SEARCH_IWARA_*` environment variables (or a `.env` file in the
-working directory), validated at start-up, and can be overridden by CLI options where one
-exists. Invalid values stop the process with exit code 78 and a message naming the field.
-Empty values are treated as "unset".
+Search Iwara reads configuration from `SEARCH_IWARA_*` environment variables (and any `.env` file in the working directory), validates all values at startup, and lets CLI flags override matching settings. Invalid values terminate startup with exit code `78` and report the offending field. Empty environment variables are treated as unset.
 
-## Storage
+## Storage & Backups
 
-| Variable | Default | CLI | Description |
+| Variable | Default | CLI Flag | Description |
 |---|---|---|---|
-| `SEARCH_IWARA_DB` | `data/oreno3d.sqlite3` in a source checkout; otherwise the per-user data dir (`~/.local/share/search-iwara/` on Linux, `~/Library/Application Support/search-iwara/` on macOS, `%LOCALAPPDATA%\search-iwara\` on Windows) | `--db-path` | SQLite database file |
-| `SEARCH_IWARA_BACKUP_DIR` | `<db dir>/backups` | `db backup --dest` | Where `db backup` writes |
-| `SEARCH_IWARA_BACKUP_KEEP` | `7` | `db backup --keep` | Backups kept after rotation (rotates `.sqlite3` and `.sqlite3.gz` together) |
-| `SEARCH_IWARA_BACKUP_COMPRESS` | `false` (`true` in systemd/Docker backup loops) | `db backup --compress/--no-compress` | Gzip-compress backups to `.sqlite3.gz` (~3–4× smaller) |
-| `SEARCH_IWARA_SQLITE_MMAP_BYTES` | auto (`32 MiB` `<1.5 GiB` RAM, `64 MiB` `<3 GiB`, `256 MiB` `>=3 GiB`) | — | Override SQLite `PRAGMA mmap_size` in bytes (`0` disables `mmap`) |
+| `SEARCH_IWARA_DB` | `data/oreno3d.sqlite3` inside a git checkout; otherwise the OS user data directory (`~/.local/share/search-iwara/` on Linux, `~/Library/Application Support/search-iwara/` on macOS, `%LOCALAPPDATA%\search-iwara\` on Windows) | `--db-path` | Path to the SQLite database file (`SEARCH_IWARA_DB_PATH` alias also accepted) |
+| `SEARCH_IWARA_BACKUP_DIR` | `<db_dir>/backups` | `db backup --dest` | Output directory for `search-iwara db backup` |
+| `SEARCH_IWARA_BACKUP_KEEP` | `7` | `db backup --keep` | Number of backup snapshots retained after rotation |
+| `SEARCH_IWARA_BACKUP_COMPRESS` | `false` | `db backup --compress` | Compress backups as `.sqlite3.gz` after `PRAGMA quick_check` |
 
-## Web
+## Web Server
 
-| Variable | Default | CLI | Description |
+| Variable | Default | CLI Flag | Description |
 |---|---|---|---|
-| `SEARCH_IWARA_HOST` | `127.0.0.1` | `serve --host` | Bind address |
-| `SEARCH_IWARA_PORT` | `8000` | `serve --port` | Bind port |
-| `SEARCH_IWARA_PAGE_SIZE` | `36` | | Results per page (1–200) |
-| `SEARCH_IWARA_MAX_RESULT_WINDOW` | `10000` | | Results counted/paginated per query; larger totals show as "10,000+" |
-| `SEARCH_IWARA_METRICS_ENABLED` | `true` | | Expose `/metrics` |
-| `SEARCH_IWARA_METRICS_TOKEN` | unset | | If set (16–256 chars of `A-Z a-z 0-9 _ -`), `/metrics` requires `Authorization: Bearer <token>`; if unset, only loopback clients may read it |
-| `SEARCH_IWARA_API_DOCS_ENABLED` | `false` | | Serve Swagger UI at `/api/docs` and the schema at `/api/openapi.json` (Swagger assets load from jsDelivr; the CSP is relaxed for that one path only) |
-| `SEARCH_IWARA_WEB_THREADS` | `16` | | Worker threads for request handling; each keeps one read-only SQLite connection (8 MB page cache) |
-| `SEARCH_IWARA_ALLOW_INDEXING` | `false` | | When false: `robots.txt` disallows everything, pages carry `noindex` |
-| — | | `serve --proxy-headers/--no-proxy-headers` | Trust `X-Forwarded-*` (default on) … |
-| — | | `serve --forwarded-allow-ips` | … only from these proxies (default `127.0.0.1`) |
-| — | | `serve --reload` | Development auto-reload |
+| `SEARCH_IWARA_HOST` | `127.0.0.1` | `serve --host` | Listen address |
+| `SEARCH_IWARA_PORT` | `8000` | `serve --port` | Listen port |
+| `SEARCH_IWARA_PAGE_SIZE` | `36` | | Results per page (`1`–`200`) |
+| `SEARCH_IWARA_MAX_RESULT_WINDOW` | `10000` | | Maximum rows counted and paginated per search; larger result sets display as `10,000+` |
+| `SEARCH_IWARA_WEB_THREADS` | `16` | | Request worker threads; each thread holds one read-only SQLite connection |
+| `SEARCH_IWARA_METRICS_ENABLED` | `true` | | Enable the Prometheus `/metrics` endpoint |
+| `SEARCH_IWARA_METRICS_TOKEN` | unset | | Optional bearer token (`16`–`256` chars of `[A-Za-z0-9_-]`) for `/metrics`; when unset, `/metrics` only answers loopback requests |
+| `SEARCH_IWARA_API_DOCS_ENABLED` | `false` | | Expose Swagger UI at `/api/docs` and OpenAPI JSON at `/api/openapi.json` |
+| `SEARCH_IWARA_ALLOW_INDEXING` | `false` | | When `false`, `robots.txt` disallows all crawlers and pages emit `noindex`; when `true`, `/sitemap.xml` is enabled |
+| *(CLI only)* | `true` | `serve --proxy-headers / --no-proxy-headers` | Honour `X-Forwarded-*` headers from trusted proxies |
+| *(CLI only)* | `127.0.0.1` | `serve --forwarded-allow-ips` | Proxy IPs trusted for `X-Forwarded-*` |
+| *(CLI only)* | `false` | `serve --reload` | Auto-reload on code/template edits (development only) |
 
-## Crawler
+## Crawler & Sync
 
-| Variable | Default | CLI | Description |
+| Variable | Default | CLI Flag | Description |
 |---|---|---|---|
-| `SEARCH_IWARA_REQUEST_CONCURRENCY` | `4` | `--request-concurrency` | Max in-flight requests and detail workers (1–64) |
-| `SEARCH_IWARA_REQUEST_RATE` | `2.0` | `--request-rate` | Request-rate ceiling in req/s (adaptive: halves on 429/503) |
-| `SEARCH_IWARA_LIST_PREFETCH_PAGES` | `4` | `sync full --list-prefetch-pages` | Listing pages fetched per batch |
-| `SEARCH_IWARA_REQUEST_TIMEOUT_SECONDS` | `30` | | Per-request timeout |
-| `SEARCH_IWARA_REQUEST_RETRIES` | `4` | | Retries for 408/425/429/5xx/timeouts/transport errors |
-| `SEARCH_IWARA_BACKOFF_BASE_SECONDS` | `1.0` | | Full-jitter backoff base |
-| `SEARCH_IWARA_BACKOFF_MAX_SECONDS` | `60` | | Backoff cap; `Retry-After` > 5× this gives up on the URL |
-| `SEARCH_IWARA_RESPECT_ROBOTS` | `true` | | Honour robots.txt rules and `Crawl-delay` |
-| `SEARCH_IWARA_USER_AGENT` | `search-iwara/<version> (+repo URL)` | | Identify the crawler honestly |
-| `SEARCH_IWARA_PROXY` | unset | | Explicit proxy, e.g. `socks5://127.0.0.1:1080`, `http://proxy:3128` |
-| `SEARCH_IWARA_TRUST_ENV` | `true` | | Use `HTTP(S)_PROXY`/`ALL_PROXY`/`NO_PROXY` from the environment |
-| `SEARCH_IWARA_HTTP2` | `true` | | Negotiate HTTP/2 |
-| `SEARCH_IWARA_DETAIL_MAX_ATTEMPTS` | `6` | | Stop retrying a failing detail page after this many attempts |
-| `SEARCH_IWARA_DETAIL_REFRESH_WINDOW_DAYS` | `30` | | Movies published within this window get their details refreshed … |
-| `SEARCH_IWARA_DETAIL_REFRESH_AFTER_HOURS` | `72` | | … once their details are older than this |
-| `SEARCH_IWARA_DETAIL_REFRESH_LIMIT` | `500` | | Max refreshes per `sync latest` |
-| `SEARCH_IWARA_RESUME_OVERLAP_PAGES` | `1` | | Pages re-scanned before the checkpoint when `sync full` resumes |
-| `SEARCH_IWARA_SYNC_FAILURE_TOLERANCE` | `10` | | Failed details tolerated before `sync` exits with 1 (any failed listing page exits 1) |
-| — | | `sync latest --stable-pages` | Stop after N consecutive pages without new movies (default 3) |
-| — | | `--max-pages`, `sync full --start-page` | Bound or position a run |
+| `SEARCH_IWARA_REQUEST_CONCURRENCY` | `4` | `--request-concurrency` | Maximum concurrent HTTP requests and detail workers (`1`–`64`) |
+| `SEARCH_IWARA_REQUEST_RATE` | `2.0` | `--request-rate` | Ceiling in requests/second; halves automatically on `429`/`503` |
+| `SEARCH_IWARA_LIST_PREFETCH_PAGES` | `4` | `sync full --list-prefetch-pages` | Listing pages fetched per batch during `sync full` |
+| `SEARCH_IWARA_REQUEST_TIMEOUT_SECONDS` | `30` | | Per-request HTTP timeout in seconds |
+| `SEARCH_IWARA_REQUEST_RETRIES` | `4` | | Retry count on `408`, `425`, `429`, `5xx`, timeouts, and transport errors |
+| `SEARCH_IWARA_BACKOFF_BASE_SECONDS` | `1.0` | | Base delay for full-jitter exponential backoff |
+| `SEARCH_IWARA_BACKOFF_MAX_SECONDS` | `60` | | Backoff ceiling; `Retry-After` greater than `5x` this skips the URL for the current run |
+| `SEARCH_IWARA_RESPECT_ROBOTS` | `true` | | Enforce `robots.txt` rules and `Crawl-delay` |
+| `SEARCH_IWARA_USER_AGENT` | `search-iwara/<version> (+repo URL)` | | Outbound HTTP `User-Agent` |
+| `SEARCH_IWARA_PROXY` | unset | | Explicit proxy URL (`socks5://127.0.0.1:1080`, `http://proxy:3128`) |
+| `SEARCH_IWARA_TRUST_ENV` | `true` | | Read `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NO_PROXY` from process env |
+| `SEARCH_IWARA_HTTP2` | `true` | | Enable HTTP/2 negotiation |
+| `SEARCH_IWARA_DETAIL_MAX_ATTEMPTS` | `6` | | Maximum automatic retry attempts for a failing movie detail page |
+| `SEARCH_IWARA_DETAIL_REFRESH_WINDOW_DAYS` | `30` | | Refresh details of movies published within this many days... |
+| `SEARCH_IWARA_DETAIL_REFRESH_AFTER_HOURS` | `72` | | ...once their stored detail record is older than this many hours |
+| `SEARCH_IWARA_DETAIL_REFRESH_LIMIT` | `500` | | Maximum stale detail refreshes queued per `sync latest` run |
+| `SEARCH_IWARA_RESUME_OVERLAP_PAGES` | `1` | | Pages re-checked behind the saved checkpoint when `sync full` resumes |
+| `SEARCH_IWARA_SYNC_FAILURE_TOLERANCE` | `10` | | Failed detail fetches tolerated before `sync` exits `1` (any failed listing page exits `1`) |
+| *(CLI only)* | `3` | `sync latest --stable-pages` | Consecutive pages without unseen movie IDs before `sync latest` stops |
+| *(CLI only)* | unset | `--max-pages`, `sync full --start-page` | Cap scanned pages or override the starting page |
+
+Built-in network bounds enforced regardless of configuration: HTTP redirects are capped at 5 validated hops within the configured `https` origin (checking `robots.txt` on every hop), and streaming response reads abort above `2 MiB` (`robots.txt`) or `10 MiB` (HTML pages).
 
 ## Logging
 
 | Variable | Default | Description |
 |---|---|---|
-| `SEARCH_IWARA_LOG_FORMAT` | `auto` | `text`, `json`, or `auto` (text on a TTY, JSON otherwise) |
-| `SEARCH_IWARA_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `SEARCH_IWARA_LOG_FORMAT` | `auto` | `text`, `json`, or `auto` (`text` on interactive TTYs, `json` otherwise) |
+| `SEARCH_IWARA_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
 
-## Exit codes
-
-| Code | Meaning |
-|---|---|
-| 0 | Success |
-| 1 | Finished with failed listing pages or more failed details than the tolerance |
-| 2 | Parser drift: the site's markup changed, run aborted (update the parser) |
-| 75 | Another sync holds the lock; nothing done (systemd treats it as success) |
-| 78 | Invalid configuration |
-| 143 | Terminated by SIGTERM/SIGINT: committed work is kept, the run is recorded as `failed` |
-
-`1` is also returned when robots.txt is unreachable (5xx/429/network): per RFC 9309 the crawler
-then treats the whole site as disallowed and stops.
-
-## Database maintenance & compliance CLI
+## Database Maintenance CLI
 
 | Command | Description |
 |---|---|
-| `search-iwara db migrate` | Apply ordered schema migrations up to `SCHEMA_VERSION` (`5`) |
-| `search-iwara db backup [--dest DIR] [--keep N] [--compress]` | Online SQLite backup + `PRAGMA quick_check` + disk-headroom check + rotation |
-| `search-iwara db refresh` | Recompute `entity_stats` read models, JST `hot_score` and FTS compaction |
-| `search-iwara db reindex [--verify]` | Stream-rebuild FTS5 indexes in 5 000-row batches, or `--verify` parity with `active` movies (exit `1` on mismatch) |
-| `search-iwara db suppress <id...> [--reason TEXT]` | Hide `source_site_id`(s) from all pages, APIs, rankings and sitemaps (`status='suppressed'`, preserved across syncs) |
-| `search-iwara db unsuppress <id...>` | Restore suppressed `source_site_id`(s) back to `status='active'` and reindex |
+| `search-iwara db migrate` | Apply ordered schema migrations up to Schema v5 |
+| `search-iwara db backup [--dest DIR] [--keep N] [--compress]` | Online SQLite backup, `PRAGMA quick_check`, disk-headroom guard, optional gzip compression, and rotation |
+| `search-iwara db refresh` | Recompute `entity_stats`, JST `hot_score`, and FTS segment compaction |
+| `search-iwara db reindex [--verify]` | Stream-rebuild FTS5 indexes in 5,000-row batches, or `--verify` active-movie index parity (exits `1` on mismatch) |
+| `search-iwara db suppress <id...> [--reason TEXT]` | Hide `source_site_id` entries across search, detail pages, APIs, rankings, and sitemaps (`status='suppressed'`) |
+| `search-iwara db unsuppress <id...>` | Restore suppressed `source_site_id` entries back to `status='active'` and reindex |
 
-Built-in crawler network bounds (enforced regardless of env settings): redirects are capped at 5
-validated hops within the configured `https` origin with `robots.txt` checked on every hop, and
-streaming response reads stop at `2 MiB` (`robots.txt`) and `10 MiB` (HTML pages).
+## Process Exit Codes
 
-See [linux-deploy.md](linux-deploy.md) for the systemd/nginx/Docker variables
-(`SEARCH_IWARA_SYNC_HOURS`, `SEARCH_IWARA_ALERT_WEBHOOK`, …) used by the deployment tooling.
+| Code | Meaning |
+|---|---|
+| `0` | Completed normally |
+| `1` | Listing page failure, detail failures above `SEARCH_IWARA_SYNC_FAILURE_TOLERANCE`, index parity mismatch, or unreachable `robots.txt` (RFC 9309) |
+| `2` | Parser drift detected: upstream HTML structure changed; sync aborted before writing bad records |
+| `75` | Another sync process holds `<db>.sync.lock` (`EX_TEMPFAIL`; treated as clean skip by `systemd`) |
+| `78` | Invalid configuration (`EX_CONFIG`) |
+| `143` | Stopped by `SIGTERM` or `SIGINT`; committed batches remain intact and the run is marked `failed` |
+
+Deployment-specific variables (`SEARCH_IWARA_SYNC_HOURS`, `SEARCH_IWARA_ALERT_WEBHOOK`, `SEARCH_IWARA_IMAGE`, etc.) are documented in [docs/linux-deploy.md](linux-deploy.md).

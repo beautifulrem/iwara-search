@@ -1,25 +1,23 @@
-# ADR-0001: Retain Python + FastAPI + Jinja2 SSR + Progressive Vanilla JS Modular Monolith
+# ADR-0001: Server-Rendered Python Modular Monolith
 
 - **Status**: Accepted
 - **Date**: 2026-11-25
 
 ## Context
 
-Search Iwara indexes ~200,000+ Oreno3D/Iwara metadata entries for low-cost single-node self-hosting. We evaluated three architectural options:
-1. **Option A (Retain & Harden)**: Python (`>=3.13`, `python:3.15-slim` in container) modular monolith (`crawler`, `parsers`, `storage`, `services`, `web`, `cli`) with FastAPI + Jinja2 SSR, ~600 LOC of `tsc --checkJs`-checked vanilla ES module JS, and tokenized CSS Cascade Layers.
-2. **Option B (Go/Rust Rewrite)**: Rewrite backend & crawler into a compiled single binary.
-3. **Option C (SPA Frontend Migration)**: Replace Jinja2 SSR with React/Vue/Svelte + JSON/GraphQL API.
+Search Iwara indexes ~200,000+ Oreno3D metadata entries for single-node self-hosting on small Linux VPS instances (`1–2 vCPU`, `1–2 GiB` RAM) or home servers. Three architectural shapes were considered:
 
-## Evidence
-
-On our 2-vCPU / 7.8 GiB Linux baseline with 200,000 movies:
-- Warm HTTP + Jinja2 + GZip latency is **`21.4 ms` P50** on `GET /`, **`10.8 ms` P50** on `GET /categories`, and **`3.0 ms` P50** on `GET /api/tags`. All baseline slow endpoints (`GET /authors` `134 ms`, `tag_all` `280 ms`, `/movies/{id}` `53 ms`) were dominated (>80%) by SQLite query execution plans, not Python or template rendering.
-- Container image is `275 MB`, runtime dependencies total 10 packages (`0` `pip-audit` vulnerabilities), and progressive `<form method="get">` SSR guarantees zero-JS usability, shareable URLs, and strict CSP (`script-src 'self'; style-src 'self'`).
+1. **Python modular monolith with SSR**: Python 3.13+ (`python:3.15-slim` in Docker), FastAPI + Jinja2 server-rendered HTML, layered CSS, and a single `tsc --checkJs`-verified ES module.
+2. **Compiled binary rewrite**: Porting the crawler and web server to Go or Rust.
+3. **SPA frontend + JSON API**: Replacing Jinja2 templates with a client-side framework and bundler.
 
 ## Decision
 
-**Adopt Option A.** Reject Go/Rust and SPA rewrites as high-risk churn with negative ROI for single-node self-hosters; direct engineering investment into SQLite query plans, FTS5 storage efficiency, RFC 9309 crawler safety, and SSR/progressive UX ergonomics.
+Keep the server-rendered Python modular monolith (`crawler`, `parsers`, `storage`, `services`, `web`, `cli`).
+
+On a 200,000-movie database, warm end-to-end HTTP + Jinja2 + GZip latency is `~23 ms` P50 on `GET /`, `~15 ms` P50 on `GET /categories`, and `~5 ms` P50 on `GET /api/tags`. Multi-tag and deep-ranking latencies are dominated (>80%) by SQLite index execution rather than Python or template rendering. Server-rendered `<form method="get">` pages also preserve full usability when JavaScript is disabled, keep every search state as a plain URL, require no frontend build step in Docker, and satisfy a strict `Content-Security-Policy` (`script-src 'self'; style-src 'self'`).
 
 ## Consequences
 
-- Preserves acyclic module boundaries, `>=95%` test coverage, zero frontend build toolchain in Docker, and full No-JS progressive enhancement.
+- Acyclic package boundaries (`web` -> `storage` -> `models`; `services` -> `crawler` / `parsers` / `storage`) and strict static typing (`mypy --strict` + `tsc --checkJs`) keep maintenance straightforward.
+- Performance optimization focuses on SQLite index layout, FTS5 storage representation, and bounded query plans rather than language or framework rewrites.

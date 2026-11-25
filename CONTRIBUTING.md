@@ -1,48 +1,54 @@
 # Contributing
 
-## Setup
+## Local Setup
+
+Requires Python 3.13+, [uv](https://docs.astral.sh/uv/), and Node.js 22+ (for `tsc --checkJs` over browser scripts).
 
 ```bash
-uv sync                 # runtime + dev tools (ruff, mypy, pytest, pre-commit)
+uv sync
 uv run pre-commit install
-make help               # list common tasks
+make help
 ```
 
-## Workflow
+## Verification Commands
 
 | Task | Command |
 |---|---|
 | Format & autofix | `make fmt` |
-| Lint | `make lint` (ruff format --check + ruff check) |
-| Types | `make typecheck` (mypy `--strict`, app + deployment manager) |
-| JS types | `make jscheck` (`tsc --checkJs` over `static/*.js`, JSDoc types) |
-| Fast tests + coverage gate (95 %) | `make cov` (parallel, includes Hypothesis property tests) |
-| Performance budgets (200k movies) | `make perf` |
-| Browser E2E + axe accessibility | `make e2e` (CI: Chromium, Firefox, WebKit) |
-| Dev server with reload | `make serve` |
+| Lint (`ruff format --check` + `ruff check`) | `make lint` |
+| Python static types (`mypy --strict`) | `make typecheck` |
+| Browser JS types (`tsc --checkJs`) | `make jscheck` |
+| Unit, integration & property tests (`>= 95%` coverage) | `make cov` |
+| 200k-movie query & refresh latency budgets | `make perf` |
+| Playwright E2E + `axe-core` WCAG 2.2 AA | `make e2e` |
+| Local dev server with auto-reload (`:8765`) | `make serve` |
 
-CI (`.github/workflows/ci.yml`) runs all of the above plus `pip-audit`, `shellcheck` and a
-Docker build with a container health check. Pull requests must be green.
+`.github/workflows/ci.yml` runs all of the above (with E2E across Chromium, Firefox, and WebKit), plus `pip-audit`, `shellcheck`, Prometheus `promtool` rule tests, and a Docker build + `/readyz` smoke check.
 
-## Conventions
+## Codebase Conventions
 
-* **Layers**: `web` → `storage` → `models`; `services` → `crawler`/`parsers`/`storage`.
-  Storage returns typed dataclasses, never dicts; presentation formatting lives in Jinja filters.
-* **Schema changes** are new functions appended to `storage/migrations.py::MIGRATIONS`. Never
-  edit a released migration. Add a test that upgrades from the previous version.
-* **SQL**: bind every value; interpolate only identifiers from the whitelists in `storage/sql.py`.
-  New query shapes need an index and, if hot, a budget in `tests/test_performance.py`.
-* **Scraped URLs** must pass `utils.safe_url` in the parser; templates render them through `safe_href`.
-* **Crawler politeness** defaults are part of the product. Don't raise the default rate or
-  concurrency, and keep robots.txt handling on.
-* **UI**: no inline scripts, styles or event handlers (CSP), every string goes through
-  `tr()` with the key present in *all* `locales/*.toml` (enforced by tests), WCAG 2.2 AA
-  (enforced by axe in `tests/e2e`).
-* **Parser changes**: refresh `tests/fixtures/*.html` from the live site (strip scripts/styles)
-  so the snapshot tests track the real markup.
+- **Layer boundaries**: `web` -> `storage` -> `models`, and `services` -> `crawler` / `parsers` / `storage`. Storage returns typed dataclasses rather than raw dicts; presentation helpers live in `search_iwara/web/formatting.py`.
+- **Database migrations**: Append new schema changes to `MIGRATIONS` in `search_iwara/storage/migrations.py`. Never mutate an already-shipped migration, and add an upgrade test from the prior schema version.
+- **SQL safety & indexing**: Bind all user values as parameters; interpolate only whitelisted column/table identifiers in `search_iwara/storage/sql.py`. Every new query shape must use an index, and hot paths belong in `tests/test_performance.py`.
+- **External URLs**: Every scraped URL must pass `utils.safe_url` during parsing, and templates render external links through `safe_href`.
+- **Crawler defaults**: Keep default concurrency (`4`), rate ceiling (`2.0` req/s), and `robots.txt` enforcement conservative.
+- **Frontend & i18n**: Follow [docs/design.md](docs/design.md) and [docs/accessibility.md](docs/accessibility.md). Inline scripts, inline styles, and `on*=` attributes are forbidden by CSP; every UI string must go through `tr()` across all `search_iwara/locales/*.toml` catalogs.
+- **Workflow actions**: Pin every GitHub Action in `.github/workflows/*.yml` to a full 40-character commit SHA with its version tag in a trailing comment (`# vX.Y.Z`), enforced by `tests/deploy/test_scripts.py`.
 
-## Releases
+## Cutting a Release
 
-1. Update `CHANGELOG.md` and the version in `pyproject.toml` and `search_iwara/__init__.py`.
-2. `uv lock`, `make check perf e2e`.
-3. Tag `vX.Y.Z` and push.
+Releases are automated via [`scripts/release.py`](scripts/release.py) and [`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+1. Record user-visible changes under `## [Unreleased]` in `CHANGELOG.md`.
+2. Bump versions and stamp `CHANGELOG.md` + `uv.lock`:
+   ```bash
+   make release VERSION=0.3.0
+   ```
+3. Run `make check` and merge/push the release commit to `main`.
+4. Tag and push:
+   ```bash
+   git tag v0.3.0
+   git push origin v0.3.0
+   ```
+
+Pushing `vX.Y.Z` verifies version parity (`tag == pyproject.toml == search_iwara/__init__.py`), runs lint/type/unit/audit checks, builds attested `.whl` + `.tar.gz` + `SHA256SUMS` artifacts, publishes multi-arch (`linux/amd64`, `linux/arm64`) images to `ghcr.io/beautifulrem/iwara-search`, and creates the GitHub Release from `CHANGELOG.md`.
