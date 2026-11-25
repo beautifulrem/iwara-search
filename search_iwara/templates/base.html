@@ -9,8 +9,8 @@
   <meta name="robots" content="{{ robots }}">
   <meta name="color-scheme" content="light dark">
   <meta name="darkreader-lock">
-  <meta name="theme-color" content="#f8f8fb" media="(prefers-color-scheme: light)" data-theme-color="light">
-  <meta name="theme-color" content="#101015" media="(prefers-color-scheme: dark)" data-theme-color="dark">
+  <meta name="theme-color" content="#f8f9fc" media="(prefers-color-scheme: light)" data-theme-color="light">
+  <meta name="theme-color" content="#0b0c0f" media="(prefers-color-scheme: dark)" data-theme-color="dark">
   <link rel="canonical" href="{{ canonical_url }}">
   {% for alt in alternates %}
   <link rel="alternate" hreflang="{{ alt.hreflang }}" href="{{ alt.href }}">
@@ -56,29 +56,36 @@
         {{ ui.icon("menu") }}<span class="sr-only">{{ tr("header.menu") }}</span>
       </button>
       <a class="brand" href="/">
-        <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="28" height="28">
+        <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="24" height="24">
         <span class="brand__name">Search<span class="brand__accent">Iwara</span></span>
         <span class="sr-only"> · {{ tr("header.home") }}</span>
       </a>
 
-      <form class="search" role="search" action="/" method="get" data-busy-form>
+      <nav class="site-nav" aria-label="{{ tr('nav.aria') }}">
+        {% for key, label in [("characters", "nav.characters"), ("authors", "nav.authors"), ("tags", "nav.tags"), ("origins", "nav.origins"), ("categories", "entity.categories")] %}
+        <a class="site-nav__link" href="/{{ key }}"{% if nav == key %} aria-current="page"{% endif %}>{{ tr(label) }}</a>
+        {% endfor %}
+      </nav>
+
+      <form class="search{% if scoped_filter_count %} has-scope{% endif %}" role="search" action="/" method="get" data-busy-form>
         <label class="sr-only" for="site-search">{{ tr("header.search_label") }}</label>
         {{ ui.icon("search", "search__icon") }}
-        <input class="search__input" id="site-search" type="search" name="q" value="{{ header_query }}"
+        <input class="search__input" id="site-search" type="search" name="q" value="{{ header_query }}" data-initial-value="{{ header_query }}"
           placeholder="{{ tr('header.search_placeholder') }}" autocomplete="off" enterkeyhint="search" maxlength="200"
           aria-keyshortcuts="/">
         {% for key, value in header_hidden.items() %}
         <input type="hidden" name="{{ key }}" value="{{ value }}">
         {% endfor %}
+        {% if scoped_filter_count %}
+        <span class="search__scope" title="{{ tr('header.scoped_filters', count=scoped_filter_count) }}">+{{ scoped_filter_count }}</span>
+        {% endif %}
+        {% if clear_query_href %}
+        <a class="search__clear" href="{{ clear_query_href }}" aria-label="{{ tr('header.search_clear') }}" title="{{ tr('header.search_clear') }}">{{ ui.icon("x") }}</a>
+        {% else %}
         <kbd class="search__kbd" aria-hidden="true">/</kbd>
+        {% endif %}
         <button class="search__submit" type="submit">{{ ui.icon("arrow-right") }}<span class="sr-only">{{ tr("header.search_submit") }}</span></button>
       </form>
-
-      <nav class="site-nav" aria-label="{{ tr('nav.aria') }}">
-        {% for key, label in [("characters", "nav.characters"), ("authors", "nav.authors"), ("tags", "nav.tags"), ("origins", "nav.origins")] %}
-        <a class="site-nav__link" href="/{{ key }}"{% if nav == key %} aria-current="page"{% endif %}>{{ tr(label) }}</a>
-        {% endfor %}
-      </nav>
 
       <div class="site-header__tools">
         <details class="menu" data-menu>
@@ -104,22 +111,22 @@
     </div>
   </header>
 
-  <div class="layout container{% if sidebar %} layout--with-sidebar{% endif %}">
-    {% if sidebar %}
-    <aside class="sidebar" aria-label="{{ tr('sidebar.aria') }}">
-      {{ ui.sidebar_sections(sidebar, "side") }}
-    </aside>
-    {% endif %}
+  <div class="layout container{% if workbench %} layout--with-sidebar{% endif %}">
     <main class="main" id="main" tabindex="-1">
       {% block content %}{% endblock %}
     </main>
+    {% if workbench %}
+    <aside class="sidebar" aria-label="{{ tr('workbench.aria') }}">
+      {{ ui.workbench_rail(workbench, quick_presets, dataset) }}
+    </aside>
+    {% endif %}
   </div>
 
   <footer class="site-footer">
     <div class="container site-footer__inner">
       <div class="site-footer__brand">
         <a class="brand brand--small" href="/">
-          <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="22" height="22">
+          <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="20" height="20">
           <span class="brand__name">Search<span class="brand__accent">Iwara</span></span>
         </a>
         <p class="site-footer__disclaimer">{{ tr("footer.disclaimer") }}</p>
@@ -155,7 +162,7 @@
   <dialog class="drawer" id="drawer" aria-labelledby="drawer-title">
     <div class="drawer__head">
       <a class="brand" href="/" id="drawer-title">
-        <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="28" height="28">
+        <img class="brand__mark" src="{{ static_url('favicon.svg') }}" alt="" width="24" height="24">
         <span class="brand__name">Search<span class="brand__accent">Iwara</span></span>
       </a>
       <button class="icon-btn" type="button" data-dialog-close>{{ ui.icon("x") }}<span class="sr-only">{{ tr("common.close") }}</span></button>
@@ -166,9 +173,32 @@
       <a class="drawer__link" href="/{{ key }}"{% if nav == key %} aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}{{ tr(label) }}</a>
       {% endfor %}
     </nav>
-    {% if sidebar %}
-    <div class="drawer__sections">
-      {{ ui.sidebar_sections(sidebar, "drawer") }}
+    <div class="drawer__tools">
+      <div class="drawer__langs" role="group" aria-label="{{ tr('header.language') }}">
+        {% for language in languages %}
+        <a class="drawer__lang{% if language.active %} is-active{% endif %}" href="{{ language.href }}" lang="{{ language.html_lang }}" hreflang="{{ language.html_lang }}"{% if language.active %} aria-current="true"{% endif %}>{{ language.label }}</a>
+        {% endfor %}
+      </div>
+      <button class="btn btn--secondary drawer__theme js-only" type="button" data-theme-toggle aria-label="{{ tr('theme.system') }}" title="{{ tr('theme.system') }}">
+        {{ ui.icon("monitor", "theme-icon theme-icon--system") }}
+        {{ ui.icon("moon", "theme-icon theme-icon--dark") }}
+        {{ ui.icon("sun", "theme-icon theme-icon--light") }}
+        <span data-theme-label>{{ tr("theme.system") }}</span>
+      </button>
+    </div>
+    {% if dataset %}
+    <div class="drawer__foot">
+      <p class="drawer__status">
+        {{ ui.icon("database") }}
+        <span>{{ tr("footer.movies", count=dataset.movie_count, shown=dataset.movie_count|number) }}</span>
+      </p>
+      <p class="drawer__sync">
+        {% if dataset.last_success_at %}
+        {{ tr("footer.updated") }} <time datetime="{{ dataset.last_success_at }}">{{ dataset.last_success_at|timestamp }}</time>
+        {% else %}
+        {{ tr("footer.never_synced") }}
+        {% endif %}
+      </p>
     </div>
     {% endif %}
   </dialog>

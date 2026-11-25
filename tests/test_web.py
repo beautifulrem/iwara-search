@@ -448,3 +448,135 @@ def test_third_party_text_gets_lang_when_reliable(client: TestClient) -> None:
     assert not re.search(r'/movies/202"[^>]* lang="ja"', japanese)  # same as page language
     detail = client.get("/movies/202", params={"lang": "en"}).text
     assert '<h1 class="detail__title" lang="ja">' in detail
+
+
+# --- design evolution regressions -------------------------------------------------------------
+
+
+def test_autocomplete_opt_in_counts(client: TestClient) -> None:
+    assert client.get("/api/authors", params={"query": "eleven"}).json() == [
+        {"id": 11, "name": "Author Eleven"}
+    ]
+    assert client.get("/api/authors", params={"query": "eleven", "counts": "1"}).json() == [
+        {"id": 11, "name": "Author Eleven", "count": 2}
+    ]
+    top_with_counts = client.get("/api/tags", params={"counts": "true"}).json()
+    assert top_with_counts[0]["count"] >= 1
+
+
+def test_nojs_entity_text_fallback_resolution(client: TestClient) -> None:
+    by_name = assert_html(client.get("/", params={"q_author_any": "Author Eleven"}))
+    assert "sunrise yelan mix" in by_name
+    assert "キヴォトス" not in by_name
+    assert 'href="http://testserver/?author_any=11"' in by_name  # canonicalized to resolved ID
+
+    by_id_text = assert_html(client.get("/", params={"q_tag_all": "32"}))
+    assert "キヴォトス" in by_id_text
+    assert "sunrise yelan mix" not in by_id_text
+
+    unmatched_pos = assert_html(client.get("/", params={"q_tag_all": "NonexistentTagXYZ"}))
+    assert "sunrise yelan mix" not in unmatched_pos
+    assert "NonexistentTagXYZ" in unmatched_pos
+
+    unmatched_neg = assert_html(client.get("/", params={"q_author_not": "GhostAuthor"}))
+    assert "sunrise yelan mix" in unmatched_neg
+    assert "GhostAuthor" in unmatched_neg
+
+
+def test_boolean_chips_title_mode_and_range_bounds(client: TestClient) -> None:
+    html = assert_html(
+        client.get(
+            "/",
+            params={
+                "q": "sunrise キヴォトス",
+                "title_mode": "any",
+                "tag_all": "31",
+                "author_not": "12",
+                "min_views": "500",
+                "max_views": "2000",
+                "max_favorites": "400",
+                "lang": "en",
+            },
+        )
+    )
+    assert "Match any" in html
+    assert "500 – 2,000" in html
+    assert "≤ 400" in html
+    assert "…" not in html.split('class="active-filters"')[1].split("</div>")[0]
+
+
+def test_facet_workbench_mutual_exclusion_and_toggles(client: TestClient) -> None:
+    # Tag 31 active in tag_all: "+" toggles off (with wb-op--req teal class), "-" switches to tag_not
+    tag_inc = client.get("/", params={"tag_all": "31"}).text
+    assert 'class="wb-op wb-op--inc wb-op--req is-active" href="/"' in tag_inc
+    assert 'href="/?tag_not=31"' in tag_inc
+
+    # Tag 31 active in tag_not: "+" switches to tag_all and strips tag_not, "-" toggles off
+    tag_exc = client.get("/", params={"tag_not": "31"}).text
+    assert 'href="/?tag_all=31"' in tag_exc
+    assert 'class="wb-op wb-op--exc is-active" href="/"' in tag_exc
+
+    # Author 11 active in author_any and author_not respectively
+    author_inc = client.get("/", params={"author_any": "11"}).text
+    assert 'href="/?author_not=11"' in author_inc
+    author_exc = client.get("/", params={"author_not": "11"}).text
+    assert 'href="/?author_any=11"' in author_exc
+
+
+def test_detail_preserves_validated_referer_and_archival_missing_state(
+    seeded: CrawlStore, settings: Settings
+) -> None:
+    seeded.conn.execute("UPDATE movies SET status = 'missing' WHERE source_site_id = 201")
+    with TestClient(create_app(settings)) as local_client:
+        with_ref = assert_html(
+            local_client.get(
+                "/movies/200",
+                headers={"referer": "http://testserver/?q=yelan&tag_not=32&page=2"},
+            )
+        )
+        assert 'href="/?q=yelan&amp;tag_not=32&amp;page=2"' in with_ref
+        assert 'data-server-context="1"' in with_ref
+        # Detail taxonomy + and - chips preserve active search context (stripping page=2)
+        assert 'href="/?q=yelan&amp;tag_not=32&amp;tag_all=31" data-tax-op="inc"' in with_ref
+        assert 'href="/?q=yelan&amp;tag_not=32%2C31" data-tax-op="exc"' in with_ref
+
+        # Cross-origin or invalid Referer falls back safely to "/"
+        cross_ref = assert_html(
+            local_client.get("/movies/200", headers={"referer": "https://evil.example/?q=spoof"})
+        )
+        assert 'data-server-context="1"' not in cross_ref
+        bad_ref = assert_html(
+            local_client.get("/movies/200", headers={"referer": "http://testserver/?page=0"})
+        )
+        assert 'href="/" data-back-search data-server-context="1"' in bad_ref
+
+        # Missing archival movie demotes CTAs and shows archival slate without play button
+        missing_html = assert_html(local_client.get("/movies/201", params={"lang": "en"}))
+        assert "Removed from source" in missing_html
+        assert "Check original Iwara URL" in missing_html
+        assert "detail__play" not in missing_html
+
+
+def test_nojs_blank_params_redirect_to_canonical_url(client: TestClient) -> None:
+    redir = client.get(
+        "/",
+        params={"q_author_any": "Author Eleven", "q": "", "min_views": "", "tag_all": ""},
+        follow_redirects=False,
+    )
+    assert redir.status_code == 303
+    assert redir.headers["location"] == "/?author_any=11"
+
+    fast_q = client.get("/", params={"q_author_any": "Author Eleven"}, follow_redirects=False)
+    assert fast_q.status_code == 303
+    assert fast_q.headers["location"] == "/?author_any=11"
+
+    root_redir = client.get("/", params={"q": "", "min_views": ""}, follow_redirects=False)
+    assert root_redir.status_code == 303
+    assert root_redir.headers["location"] == "/"
+
+
+def test_filter_groups_serialize_entity_ids_not_repr(client: TestClient) -> None:
+    html = assert_html(client.get("/", params={"tag_all": "31,32", "author_any": "11"}))
+    assert "EntityLink" not in html
+    assert 'name="tag_all" value="31,32" data-combo-value' in html
+    assert 'name="author_any" value="11" data-combo-value' in html

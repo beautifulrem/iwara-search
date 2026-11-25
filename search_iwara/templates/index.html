@@ -2,7 +2,9 @@
 
 {% block content %}
 {% set count_text = results.total|number ~ ("+" if results.total_is_capped else "") %}
+{% set onboarding_only = empty_database and not active_filters and not filters.q %}
 <section class="results" aria-labelledby="results-title">
+  {% if not onboarding_only %}
   <div class="results-head">
     <div class="results-head__title">
       <h1 id="results-title">
@@ -31,7 +33,7 @@
         <label class="sr-only" for="sort-select">{{ tr("sort.more_label") }}</label>
         <div class="select{% if more_active %} is-active{% endif %}">
           {{ ui.icon("arrow-up-down", "select__icon") }}
-          <select id="sort-select" name="sort">
+          <select id="sort-select" name="sort" data-active-sort="{{ filters.sort }}">
             {% if not more_active %}
             <option value="{{ filters.sort }}" selected>{{ tr("sort.more") }}</option>
             {% endif %}
@@ -41,6 +43,11 @@
           </select>
           {{ ui.icon("chevron-down", "select__chevron") }}
         </div>
+        <template data-all-sorts>
+          {% for option in sort_options %}
+          <option value="{{ option.value }}" data-href="{{ option.href }}"{% if option.active %} selected{% endif %}>{{ tr("sort.option." ~ option.value) }}</option>
+          {% endfor %}
+        </template>
         <noscript><button class="btn btn--secondary btn--sm" type="submit">{{ tr("sort.apply") }}</button></noscript>
       </form>
 
@@ -55,6 +62,7 @@
       </noscript>
     </div>
   </div>
+  {% endif %}
 
   {% if active_filters %}
   <div class="active-filters">
@@ -62,11 +70,12 @@
     <ul class="active-filters__list">
       {% for chip in active_filters %}
       <li>
-        <a class="filter-chip{% if chip.negative %} filter-chip--negative{% endif %}" href="{{ chip.remove_href }}">
+        <a class="filter-chip filter-chip--{{ chip.tone }}{% if chip.negative %} filter-chip--negative{% endif %}" href="{{ chip.remove_href }}">
+          {% if chip.operator %}<span class="filter-chip__op">{{ chip.operator }}</span>{% endif %}
           <span class="filter-chip__group">{{ chip.group }}</span>
           <span class="filter-chip__label">{{ chip.label }}</span>
           {{ ui.icon("x", "filter-chip__x") }}
-          <span class="sr-only">{{ tr("filter.remove_one") }}</span>
+          <span class="sr-only"> {{ tr("filter.remove_one") }}</span>
         </a>
       </li>
       {% endfor %}
@@ -80,11 +89,14 @@
   {{ ui.pager(pagination) }}
   {% elif empty_database %}
   <div class="empty-state empty-state--onboarding">
-    <div class="empty-state__icon">{{ ui.icon("database") }}</div>
-    <h2>{{ tr("empty_db.title") }}</h2>
+    {% if onboarding_only %}
+    <h1 class="empty-state__title" id="results-title">{{ ui.icon("database") }}<span>{{ tr("empty_db.title") }}</span></h1>
+    {% else %}
+    <h2 class="empty-state__heading">{{ ui.icon("database") }}<span>{{ tr("empty_db.title") }}</span></h2>
+    {% endif %}
     <p>{{ tr("empty_db.body") }}</p>
     <div class="command">
-      <code class="command__text" id="sync-command">uv run search-iwara sync latest</code>
+      <code class="command__text" id="sync-command" tabindex="0">uv run search-iwara sync latest</code>
       <button class="btn btn--secondary btn--sm js-only" type="button" data-copy="#sync-command">
         {{ ui.icon("copy") }}<span>{{ tr("common.copy") }}</span>
       </button>
@@ -93,8 +105,7 @@
   </div>
   {% else %}
   <div class="empty-state">
-    <div class="empty-state__icon">{{ ui.icon("search") }}</div>
-    <h2>{{ tr("results.empty.title") }}</h2>
+    <h2 class="empty-state__heading">{{ ui.icon("search") }}<span>{{ tr("results.empty.title") }}</span></h2>
     <p>{{ tr("results.empty.body") }}</p>
     <ul class="empty-state__tips">
       <li>{{ tr("results.empty.tip_short") }}</li>
@@ -112,7 +123,7 @@
 </section>
 
 <dialog class="sheet" id="filters" aria-labelledby="filters-title">
-  <form class="sheet__form" action="/" method="get" data-busy-form>
+  <form class="sheet__form" action="/" method="get" data-filter-form data-busy-form>
     <div class="sheet__head">
       <h2 class="sheet__title" id="filters-title">{{ ui.icon("sliders") }}{{ tr("filter.title") }}</h2>
       <button class="icon-btn" type="button" data-dialog-close commandfor="filters" command="close">{{ ui.icon("x") }}<span class="sr-only">{{ tr("common.close") }}</span></button>
@@ -120,24 +131,25 @@
 
     <div class="sheet__body">
       <input type="hidden" name="sort" value="{{ filters.sort }}">
+      <input type="hidden" name="q" value="{{ filters.q }}" data-sync-header-q>
       {% if request.query_params.get("lang") %}
       <input type="hidden" name="lang" value="{{ lang }}">
       {% endif %}
 
-      <details class="fgroup" open>
-        <summary class="fgroup__summary">{{ ui.icon("search") }}<span>{{ tr("filter.group.keyword") }}</span>{{ ui.icon("chevron-down", "fgroup__chevron") }}</summary>
-        <div class="fgroup__body">
-          <div class="field">
-            <label class="field__label" for="filter-q">{{ tr("filter.keyword.label") }}</label>
-            <input class="input" id="filter-q" type="search" name="q" value="{{ filters.q }}" maxlength="200" placeholder="{{ tr('header.search_placeholder') }}">
-          </div>
-          <fieldset class="field segmented-choice">
-            <legend class="field__label">{{ tr("filter.keyword.mode") }}</legend>
-            <label class="segmented-choice__option"><input type="radio" name="title_mode" value="all"{% if filters.title_mode == "all" %} checked{% endif %}><span>{{ tr("filter.keyword.mode_all") }}</span></label>
-            <label class="segmented-choice__option"><input type="radio" name="title_mode" value="any"{% if filters.title_mode == "any" %} checked{% endif %}><span>{{ tr("filter.keyword.mode_any") }}</span></label>
-          </fieldset>
-        </div>
-      </details>
+      {% if quick_presets %}
+      <div class="sheet__presets">
+        <p class="field__label">{{ tr("workbench.presets") }}</p>
+        {{ ui.preset_strip(quick_presets, "preset-strip--sheet") }}
+      </div>
+      {% endif %}
+
+      <div class="sheet__keyword">
+        <fieldset class="field segmented-choice">
+          <legend class="field__label">{{ tr("filter.keyword.mode") }}</legend>
+          <label class="segmented-choice__option"><input type="radio" name="title_mode" value="all"{% if filters.title_mode == "all" %} checked{% endif %}><span>{{ tr("filter.keyword.mode_all") }}</span></label>
+          <label class="segmented-choice__option"><input type="radio" name="title_mode" value="any"{% if filters.title_mode == "any" %} checked{% endif %}><span>{{ tr("filter.keyword.mode_any") }}</span></label>
+        </fieldset>
+      </div>
 
       {% set groups = {} %}
       {% for group in filter_groups %}{% set _ = groups.update({group.name: group}) %}{% endfor %}
@@ -147,9 +159,12 @@
         ("origin", "book", ["origin_any", "origin_not"]),
         ("tag", "tag", ["tag_all", "tag_any", "tag_not"]),
       ] %}
-      {% set selected_count = namespace(n=0) %}
-      {% for name in names %}{% set selected_count.n = selected_count.n + groups[name].selected|length %}{% endfor %}
-      <details class="fgroup"{% if selected_count.n %} open{% endif %}>
+      {% set selected_count = namespace(n=0, pending=false) %}
+      {% for name in names %}
+        {% set selected_count.n = selected_count.n + groups[name].selected|length %}
+        {% if groups[name].pending_query %}{% set selected_count.pending = true %}{% endif %}
+      {% endfor %}
+      <details class="fgroup"{% if selected_count.n or selected_count.pending %} open{% endif %}>
         <summary class="fgroup__summary">
           {{ ui.icon(icon_name) }}<span>{{ tr("filter.group." ~ key) }}</span>
           {% if selected_count.n %}<span class="badge badge--soft">{{ selected_count.n }}</span>{% endif %}

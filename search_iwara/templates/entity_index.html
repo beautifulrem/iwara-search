@@ -3,18 +3,27 @@
 {% block content %}
 {% set icons = {"characters": "sparkles", "authors": "user", "tags": "tag", "origins": "book", "categories": "layers"} %}
 <section class="rankings" aria-labelledby="rank-title">
-  <header class="page-head">
-    <div class="page-head__icon">{{ ui.icon(icons[entity_kind]) }}</div>
-    <div>
+  <div class="ranking-top">
+    <header class="page-head">
       <h1 class="page-head__title" id="rank-title">{{ tr("entity." ~ entity_kind) }}</h1>
-      <p class="page-head__sub">{{ tr("entity.subtitle", count=total, shown=total|number) }}</p>
-    </div>
-  </header>
+      <p class="page-head__sub">
+        <span>{{ tr("entity.subtitle", count=total, shown=total|number) }}</span>
+        <span class="page-head__formula">{{ tr("entity.formula") }}</span>
+      </p>
+    </header>
+
+    <nav class="dir-tabs" aria-label="{{ tr('entity.directory_aria') }}">
+      {% for tab in ranking_tabs %}
+      <a class="dir-tabs__item" href="{{ tab.href }}"{% if tab.active %} aria-current="page"{% endif %}>
+        {{ ui.icon(tab.icon) }}<span>{{ tr("entity." ~ tab.kind) }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
 
   {% if not items %}
   <div class="empty-state">
-    <div class="empty-state__icon">{{ ui.icon(icons[entity_kind]) }}</div>
-    <h2>{{ tr("entity.empty.title") }}</h2>
+    <h2 class="empty-state__heading">{{ ui.icon(icons[entity_kind]) }}<span>{{ tr("entity.empty.title") }}</span></h2>
     <p>{{ tr("entity.empty.body") }}</p>
     <div class="empty-state__actions"><a class="btn btn--secondary" href="/">{{ tr("results.empty.browse_all") }}</a></div>
   </div>
@@ -26,7 +35,7 @@
       <div class="author-row__head">
         <span class="rank-badge{% if rank_offset + loop.index <= 3 %} rank-badge--top{% endif %}">{{ rank_offset + loop.index }}</span>
         <div class="author-row__who">
-          <h2 class="author-row__name" id="author-{{ item.source_id }}"><a href="{{ item_href(item) }}"{{ item.name|lang_attr }}>{{ item.name }}</a></h2>
+          <h2 class="author-row__name" id="author-{{ item.source_id }}"><a href="{{ item_href(item) }}" title="{{ item.name }}"{{ item.name|lang_attr }}>{{ item.name }}</a></h2>
           <p class="author-row__stats">
             <span>{{ tr("entity.movie_count", count=item.movie_count, shown=item.movie_count|number) }}</span>
             <span>{{ ui.icon("heart") }}{{ item.total_favorites|compact }}</span>
@@ -38,7 +47,7 @@
       {% if movies %}
       <div class="rail" role="region" aria-label="{{ tr('entity.works_of', name=item.name) }}" tabindex="0">
         {% for movie in movies %}
-        {{ ui.card(movie, heading="h3", show_tags=False) }}
+        {{ ui.card(movie, heading="h3", show_tags=False, show_author=False) }}
         {% endfor %}
       </div>
       {% endif %}
@@ -47,23 +56,35 @@
   </ol>
   {% else %}
   {% set top = items|map(attribute="popularity")|max %}
-  <ol class="rank-list">
-    {% for item in items %}
-    {% set rank = rank_offset + loop.index %}
-    <li class="rank-row">
-      <span class="rank-badge{% if rank <= 3 %} rank-badge--top{% endif %}">{{ rank }}</span>
-      <div class="rank-row__main">
-        <a class="rank-row__name" href="{{ item_href(item) }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
-        <meter class="rank-row__meter" min="0" max="{{ [top, 1]|max }}" value="{{ item.popularity }}" aria-label="{{ tr('entity.popularity') }}">{{ item.popularity }}</meter>
-      </div>
-      <div class="rank-row__stats">
-        {% if entity_kind == "categories" %}<span class="kind-badge">{{ tr("entity.kind." ~ item.kind) }}</span>{% endif %}
-        <span title="{{ tr('entity.movie_count', count=item.movie_count, shown=item.movie_count|number) }}">{{ tr("entity.movie_count", count=item.movie_count, shown=item.movie_count|compact) }}</span>
-        <span class="rank-row__fav">{{ ui.icon("heart") }}{{ item.total_favorites|compact }}</span>
-      </div>
-    </li>
-    {% endfor %}
-  </ol>
+  <div class="rank-table">
+    <div class="rank-table__head" aria-hidden="true">
+      <span>{{ tr("entity.col.rank") }}</span>
+      <span>{{ tr("entity.col.name") }}</span>
+      <span class="rank-table__num">{{ tr("entity.col.works") }}</span>
+      <span class="rank-table__num">{{ tr("entity.col.likes") }}</span>
+      <span class="rank-table__num">{{ tr("entity.col.views") }}</span>
+    </div>
+    <ol class="rank-list">
+      {% for item in items %}
+      {% set rank = rank_offset + loop.index %}
+      <li class="rank-row">
+        <span class="rank-badge{% if rank <= 3 %} rank-badge--top{% endif %}">{{ rank }}</span>
+        <div class="rank-row__main">
+          <div class="rank-row__label">
+            <a class="rank-row__name" href="{{ item_href(item) }}" title="{{ item.name }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
+            {% if entity_kind == "categories" %}<span class="kind-badge">{{ tr("entity.kind." ~ item.kind) }}</span>{% endif %}
+          </div>
+          <meter class="rank-row__meter" min="0" max="{{ [top, 1]|max }}" value="{{ item.popularity }}" aria-label="{{ tr('entity.popularity') }}">{{ item.popularity }}</meter>
+        </div>
+        <div class="rank-row__stats">
+          <span class="rank-row__num rank-row__works" title="{{ tr('entity.movie_count', count=item.movie_count, shown=item.movie_count|number) }}"><span>{{ item.movie_count|compact }}</span><span class="rank-row__unit">{{ tr("entity.col.works") }}</span></span>
+          <span class="rank-row__num rank-row__fav">{{ ui.icon("heart") }}{{ item.total_favorites|compact }}</span>
+          <span class="rank-row__num rank-row__views">{{ ui.icon("eye") }}{{ item.total_views|compact }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
   {% endif %}
 
   {{ ui.pager(pagination) }}

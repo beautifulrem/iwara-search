@@ -2,7 +2,7 @@
 // Search Iwara — progressive enhancement for the server-rendered UI.
 // Every feature degrades to plain links / GET forms when this module does not run.
 
-/** @typedef {{ id: number, name: string }} Entity */
+/** @typedef {{ id: number, name: string, count?: number }} Entity */
 
 const root = document.documentElement;
 const i18n = document.body.dataset;
@@ -45,7 +45,7 @@ const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: r
 
 /** @type {ThemePref[]} */
 const THEME_ORDER = ["system", "dark", "light"];
-const THEME_COLORS = { light: "#f8f8fb", dark: "#101015" };
+const THEME_COLORS = { light: "#f8f9fc", dark: "#0b0c0f" };
 
 /** @param {string | undefined} value @returns {ThemePref} */
 const asTheme = (value) => (value === "dark" || value === "light" ? value : "system");
@@ -66,6 +66,9 @@ function applyTheme(pref) {
   for (const button of document.querySelectorAll("[data-theme-toggle]")) {
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
+  }
+  for (const span of document.querySelectorAll("[data-theme-label]")) {
+    span.textContent = label;
   }
 }
 
@@ -153,9 +156,23 @@ function initSearchShortcut() {
 }
 
 function initSortSelect() {
+  const mobileMq = window.matchMedia("(max-width: 39.99rem)");
   for (const form of document.querySelectorAll("[data-sort-form]")) {
     const select = form.querySelector("select");
-    if (!(form instanceof HTMLFormElement) || !select) continue;
+    const allTpl = form.querySelector("template[data-all-sorts]");
+    if (!(form instanceof HTMLFormElement) || !(select instanceof HTMLSelectElement)) continue;
+    const desktopNodes = [...select.children].map((node) => node.cloneNode(true));
+    const activeSort = select.dataset.activeSort ?? select.value;
+    const syncOptions = () => {
+      if (!(allTpl instanceof HTMLTemplateElement)) return;
+      const source = mobileMq.matches
+        ? [...allTpl.content.children].map((node) => node.cloneNode(true))
+        : desktopNodes.map((node) => node.cloneNode(true));
+      select.replaceChildren(...source);
+      select.value = activeSort;
+    };
+    syncOptions();
+    mobileMq.addEventListener("change", syncOptions);
     select.addEventListener("change", () => {
       const href = select.selectedOptions[0]?.dataset.href;
       startProgress();
@@ -257,10 +274,13 @@ function highlight(text, query) {
   return fragment;
 }
 
-/** @param {string} id @param {string} name @param {boolean} negative */
-function createChip(id, name, negative) {
+/** @typedef {"include" | "require" | "negative"} ChipTone */
+
+/** @param {string} id @param {string} name @param {ChipTone} tone */
+function createChip(id, name, tone) {
   const chip = document.createElement("li");
-  chip.className = negative ? "chip chip--negative" : "chip";
+  chip.className =
+    tone === "negative" ? "chip chip--negative" : tone === "require" ? "chip chip--require" : "chip";
   chip.dataset.id = String(id);
 
   const label = document.createElement("span");
@@ -300,7 +320,12 @@ function initCombobox(container) {
   }
 
   const api = container.dataset.api ?? "";
-  const negative = container.classList.contains("combo--negative");
+  /** @type {ChipTone} */
+  const chipTone = container.classList.contains("combo--negative")
+    ? "negative"
+    : container.classList.contains("combo--require")
+      ? "require"
+      : "include";
   /** @type {Map<string, string>} */
   const selected = new Map();
   for (const chip of chips.querySelectorAll(".chip")) {
@@ -323,12 +348,33 @@ function initCombobox(container) {
   const syncHidden = () => {
     hidden.value = [...selected.keys()].join(",");
   };
+  syncHidden();
+
+  const positionPopup = () => {
+    const scroller = container.closest(".sheet__body");
+    if (scroller instanceof HTMLElement) {
+      popup.classList.remove("is-dropup");
+      popup.classList.add("is-compact");
+      const scrollerRect = scroller.getBoundingClientRect();
+      const inputRect = input.getBoundingClientRect();
+      const popupBottom = popup.getBoundingClientRect().bottom;
+      const neededBottom = Math.max(inputRect.bottom + 188, popupBottom + 8);
+      if (neededBottom > scrollerRect.bottom) {
+        scroller.scrollBy({ top: neededBottom - scrollerRect.bottom, behavior: "instant" });
+      }
+      return;
+    }
+    popup.classList.toggle("is-compact", window.innerHeight - input.getBoundingClientRect().bottom < 240);
+  };
 
   /** @param {boolean} expanded */
   const setExpanded = (expanded) => {
     input.setAttribute("aria-expanded", String(expanded));
     popup.hidden = !expanded;
-    if (!expanded) {
+    if (expanded) {
+      positionPopup();
+    } else {
+      popup.classList.remove("is-dropup", "is-compact");
       active = -1;
       input.removeAttribute("aria-activedescendant");
       window.clearTimeout(announceTimer);
@@ -379,7 +425,7 @@ function initCombobox(container) {
     const id = String(item.id);
     if (selected.has(id)) return;
     selected.set(id, item.name);
-    chips.append(createChip(id, item.name, negative));
+    chips.append(createChip(id, item.name, chipTone));
     syncHidden();
     announce(format(i18n.i18nAdded, { name: item.name }));
   };
@@ -403,7 +449,17 @@ function initCombobox(container) {
       option.className = "combo__option";
       option.setAttribute("role", "option");
       option.setAttribute("aria-selected", "false");
-      option.append(highlight(item.name, query));
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "combo__option-name";
+      nameSpan.append(highlight(item.name, query));
+      option.append(nameSpan);
+      if (typeof item.count === "number") {
+        const countSpan = document.createElement("span");
+        countSpan.className = "combo__count";
+        countSpan.textContent = item.count.toLocaleString();
+        countSpan.setAttribute("aria-hidden", "true");
+        option.append(countSpan);
+      }
       // mousedown keeps focus in the input so the listbox does not close first.
       option.addEventListener("mousedown", (event) => event.preventDefault());
       option.addEventListener("click", () => choose(index));
@@ -425,6 +481,7 @@ function initCombobox(container) {
     try {
       const url = new URL(api, window.location.origin);
       url.searchParams.set("query", query);
+      url.searchParams.set("counts", "1");
       const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
       /** @type {Entity[]} */
       const items = response.ok ? await response.json() : [];
@@ -517,6 +574,245 @@ function initCombobox(container) {
     removeChip(chip.dataset.id);
     (next instanceof HTMLElement ? next : input).focus();
   });
+
+  const parentForm = container.closest("form");
+  if (parentForm) {
+    const resolvers = formResolvers.get(parentForm) ?? [];
+    resolvers.push(() => {
+      const pending = input.value.trim();
+      if (!pending || !options.length) return;
+      const picked =
+        (active >= 0 ? options[active] : undefined) ??
+        options.find((item) => item.name.toLocaleLowerCase() === pending.toLocaleLowerCase());
+      if (picked) {
+        addChip(picked);
+        input.value = "";
+      }
+    });
+    formResolvers.set(parentForm, resolvers);
+  }
+}
+
+/** @type {WeakMap<HTMLFormElement, Array<() => void>>} */
+const formResolvers = new WeakMap();
+
+/**
+ * @param {HTMLFormElement} form
+ * @param {string | undefined} name
+ * @returns {HTMLInputElement | null}
+ */
+function namedInput(form, name) {
+  if (!name) return null;
+  const el = form.querySelector(`input[name="${CSS.escape(name)}"]`);
+  return el instanceof HTMLInputElement ? el : null;
+}
+
+/** @param {HTMLFormElement} form */
+function syncSheetPresets(form) {
+  for (const chip of form.querySelectorAll(".preset-chip[data-preset-field]")) {
+    if (!(chip instanceof HTMLElement)) continue;
+    const field = namedInput(form, chip.dataset.presetField);
+    const clearField = namedInput(form, chip.dataset.presetClear);
+    const target = chip.dataset.presetValue ?? "";
+    const isActive = Boolean(target) && field?.value.trim() === target && !clearField?.value.trim();
+    chip.classList.toggle("is-active", isActive);
+    if (isActive) chip.setAttribute("aria-current", "true");
+    else chip.removeAttribute("aria-current");
+  }
+}
+
+function initFilterForms() {
+  for (const form of document.querySelectorAll("form[data-filter-form]")) {
+    if (!(form instanceof HTMLFormElement)) continue;
+    form.addEventListener("click", (event) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const chip = event.target instanceof Element ? event.target.closest(".preset-chip[data-preset-field]") : null;
+      if (!(chip instanceof HTMLElement)) return;
+      const field = namedInput(form, chip.dataset.presetField);
+      if (!field) return;
+      event.preventDefault();
+      const clearField = namedInput(form, chip.dataset.presetClear);
+      const target = chip.dataset.presetValue ?? "";
+      const wasActive = Boolean(target) && field.value.trim() === target && !clearField?.value.trim();
+      field.value = wasActive ? "" : target;
+      if (clearField) clearField.value = "";
+      const group = field.closest("details");
+      if (group instanceof HTMLDetailsElement && !wasActive) group.open = true;
+      syncSheetPresets(form);
+      announce(chip.textContent?.trim() ?? "");
+    });
+    form.addEventListener("input", () => syncSheetPresets(form));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const siteSearch = document.getElementById("site-search");
+      const syncedQ = form.querySelector("[data-sync-header-q]");
+      if (
+        siteSearch instanceof HTMLInputElement &&
+        syncedQ instanceof HTMLInputElement &&
+        siteSearch.value !== (siteSearch.dataset.initialValue ?? "")
+      ) {
+        syncedQ.value = siteSearch.value;
+      }
+      for (const resolvePending of formResolvers.get(form) ?? []) resolvePending();
+      const params = new URLSearchParams();
+      for (const [key, rawValue] of new FormData(form).entries()) {
+        if (typeof rawValue !== "string") continue;
+        const value = rawValue.trim();
+        if (!value) continue;
+        if (key === "sort" && value === "published_desc") continue;
+        if (key === "title_mode" && value === "all") continue;
+        params.append(key, value);
+      }
+      startProgress();
+      for (const button of form.querySelectorAll('button[type="submit"]')) {
+        button.setAttribute("aria-busy", "true");
+      }
+      const queryString = params.toString();
+      window.location.assign(queryString ? `/?${queryString}` : "/");
+    });
+  }
+}
+
+function initHorizontalStrips() {
+  const strips = [...document.querySelectorAll(".segmented, .dir-tabs, .active-filters")].filter(
+    /** @returns {el is HTMLElement} */ (el) => el instanceof HTMLElement,
+  );
+  /** @param {HTMLElement} strip */
+  const updateEdges = (strip) => {
+    const maxScroll = strip.scrollWidth - strip.clientWidth;
+    strip.classList.toggle("has-scroll-start", maxScroll > 2 && strip.scrollLeft > 2);
+    strip.classList.toggle("has-scroll-end", maxScroll > 2 && strip.scrollLeft < maxScroll - 2);
+  };
+  for (const strip of strips) {
+    if (strip.scrollWidth > strip.clientWidth) {
+      const current = strip.querySelector('[aria-current="page"]');
+      if (current instanceof HTMLElement) {
+        const left = current.offsetLeft - strip.offsetLeft;
+        const right = left + current.offsetWidth;
+        if (right > strip.clientWidth) {
+          strip.scrollLeft = Math.max(0, left - (strip.clientWidth - current.offsetWidth) / 2);
+        }
+      }
+    }
+    updateEdges(strip);
+    strip.addEventListener("scroll", () => updateEdges(strip), { passive: true });
+  }
+  window.addEventListener("resize", () => strips.forEach(updateEdges), { passive: true });
+}
+
+/** @type {Record<string, [string, string]>} */
+const TAX_FIELDS = {
+  authors: ["author_any", "author_not"],
+  origins: ["origin_any", "origin_not"],
+  characters: ["character_any", "character_not"],
+  tags: ["tag_all", "tag_not"],
+};
+
+/**
+ * @param {URLSearchParams} params
+ * @param {string} key
+ */
+const csvIds = (params, key) =>
+  (params.get(key) ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+/**
+ * @param {URLSearchParams} params
+ * @param {string} key
+ * @param {string[]} ids
+ */
+function setCsvIds(params, key, ids) {
+  if (ids.length) params.set(key, ids.join(","));
+  else params.delete(key);
+}
+
+/** @param {string} savedHref */
+function enhanceTaxonomyOps(savedHref) {
+  const baseParams = new URL(savedHref, window.location.origin).searchParams;
+  baseParams.delete("page");
+  baseParams.delete("lang");
+  for (const link of document.querySelectorAll("a[data-tax-op]")) {
+    if (!(link instanceof HTMLAnchorElement)) continue;
+    const op = link.dataset.taxOp;
+    const kind = link.dataset.taxKind ?? "";
+    const id = link.dataset.taxId ?? "";
+    const pair = TAX_FIELDS[kind];
+    if (!pair || !id || (op !== "inc" && op !== "exc")) continue;
+    const [posKey, negKey] = pair;
+    const next = new URLSearchParams(baseParams);
+    const posIds = csvIds(next, posKey);
+    const anyIds = kind === "tags" ? csvIds(next, "tag_any") : [];
+    const negIds = csvIds(next, negKey);
+    const inPos = posIds.includes(id) || anyIds.includes(id);
+    const inNeg = negIds.includes(id);
+    if (op === "inc") {
+      if (inPos) {
+        setCsvIds(next, posKey, posIds.filter((x) => x !== id));
+        if (kind === "tags") setCsvIds(next, "tag_any", anyIds.filter((x) => x !== id));
+      } else {
+        setCsvIds(next, posKey, [...posIds, id].slice(0, 20));
+        setCsvIds(next, negKey, negIds.filter((x) => x !== id));
+      }
+    } else if (inNeg) {
+      setCsvIds(next, negKey, negIds.filter((x) => x !== id));
+    } else {
+      setCsvIds(next, negKey, [...negIds, id].slice(0, 20));
+      setCsvIds(next, posKey, posIds.filter((x) => x !== id));
+      if (kind === "tags") setCsvIds(next, "tag_any", anyIds.filter((x) => x !== id));
+    }
+    const qs = next.toString();
+    link.href = qs ? `/?${qs}` : "/";
+    const active = op === "inc" ? inPos : inNeg;
+    link.classList.toggle("is-active", active);
+    if (active) link.setAttribute("aria-current", "true");
+    else link.removeAttribute("aria-current");
+    const chip = link.closest(".tax-chip");
+    if (chip) {
+      chip.classList.toggle("is-included", inPos);
+      chip.classList.toggle("is-excluded", !inPos && inNeg);
+    }
+  }
+}
+
+function initSearchContext() {
+  try {
+    const path = window.location.pathname;
+    if (path === "/") {
+      sessionStorage.setItem("lastSearchHref", `${path}${window.location.search}`);
+      return;
+    }
+    if (!path.startsWith("/movies/")) {
+      sessionStorage.removeItem("lastSearchHref");
+      return;
+    }
+    const backLink = document.querySelector("[data-back-search]");
+    if (!(backLink instanceof HTMLAnchorElement)) return;
+    if (backLink.hasAttribute("data-server-context")) {
+      const serverHref = backLink.getAttribute("href");
+      if (serverHref && serverHref.startsWith("/") && !serverHref.startsWith("//")) {
+        sessionStorage.setItem("lastSearchHref", serverHref);
+      }
+      return;
+    }
+    if (document.referrer) {
+      const ref = new URL(document.referrer);
+      const fromSearchOrDetail =
+        ref.origin === window.location.origin && (ref.pathname === "/" || ref.pathname.startsWith("/movies/"));
+      if (!fromSearchOrDetail) {
+        sessionStorage.removeItem("lastSearchHref");
+        return;
+      }
+    }
+    const saved = sessionStorage.getItem("lastSearchHref");
+    if (saved && saved.startsWith("/") && !saved.startsWith("//")) {
+      backLink.href = saved;
+      enhanceTaxonomyOps(saved);
+    }
+  } catch {
+    /* ignore blocked sessionStorage; server-side Referer fallback still works */
+  }
 }
 
 /* ------------------------------------------------------------------ boot */
@@ -536,9 +832,12 @@ initMenus();
 initSearchShortcut();
 initSortSelect();
 initCopyButtons();
+document.querySelectorAll("[data-combobox]").forEach(initCombobox);
+initFilterForms();
+initHorizontalStrips();
+initSearchContext();
 initNavigationFeedback();
 initImageFallbacks();
-document.querySelectorAll("[data-combobox]").forEach(initCombobox);
 
 if (prefersReducedMotion()) root.classList.add("reduce-motion");
 // Everything above is wired up: tests (and anyone else) can wait for this instead of guessing.

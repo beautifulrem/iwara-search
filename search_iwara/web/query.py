@@ -28,6 +28,7 @@ SORT_ALIASES: Final[dict[str, SortMode]] = {
 }
 
 IdList = Annotated[str, Field(max_length=MAX_IDS_PER_FILTER * 12)]
+EntityQueryText = Annotated[str, Field(max_length=100)]
 NumberText = Annotated[str, Field(max_length=24)]
 
 
@@ -45,6 +46,15 @@ class SearchParams(BaseModel):
     tag_all: IdList = ""
     tag_any: IdList = ""
     tag_not: IdList = ""
+    q_author_any: EntityQueryText = ""
+    q_author_not: EntityQueryText = ""
+    q_origin_any: EntityQueryText = ""
+    q_origin_not: EntityQueryText = ""
+    q_character_any: EntityQueryText = ""
+    q_character_not: EntityQueryText = ""
+    q_tag_all: EntityQueryText = ""
+    q_tag_any: EntityQueryText = ""
+    q_tag_not: EntityQueryText = ""
     published_from: Annotated[str, Field(max_length=10)] = ""
     published_to: Annotated[str, Field(max_length=10)] = ""
     min_views: NumberText = ""
@@ -76,6 +86,16 @@ class SearchParams(BaseModel):
         except ValueError:
             return ""
 
+    def pending_entity_queries(self) -> dict[str, str]:
+        """Non-empty combobox text fields submitted without JavaScript selection."""
+
+        pending: dict[str, str] = {}
+        for name in ID_FILTER_FIELDS:
+            raw: str = getattr(self, f"q_{name}")
+            if raw:
+                pending[name] = raw
+        return pending
+
     def to_filters(self) -> SearchFilters:
         ids = {
             name: parse_csv_ids(getattr(self, name), limit=MAX_IDS_PER_FILTER) for name in ID_FILTER_FIELDS
@@ -99,3 +119,4 @@ class AutocompleteParams(BaseModel):
 
     query: Annotated[str, Field(max_length=100)] = ""
     limit: Annotated[int, Field(ge=1, le=20)] = 10
+    counts: bool = False

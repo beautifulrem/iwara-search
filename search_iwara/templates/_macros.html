@@ -9,7 +9,7 @@
 {%- endmacro %}
 
 {#- A movie card. `heading` keeps the document outline correct wherever the grid appears. -#}
-{% macro card(movie, heading="h2", eager=False, show_tags=True) -%}
+{% macro card(movie, heading="h2", eager=False, show_tags=True, show_author=True) -%}
 {%- set href = url_for("movie_detail", source_site_id=movie.source_site_id) -%}
 {%- set thumb = movie.thumbnail_url|safe_href -%}
 <article class="card">
@@ -25,33 +25,43 @@
     </span>
   </a>
   <div class="card__body">
-    <{{ heading }} class="card__title"><a href="{{ href }}"{{ movie.title|lang_attr }}>{% if movie.title %}{{ movie.title|highlight(highlight_terms|default([])) }}{% else %}{{ tr("common.untitled") }}{% endif %}</a></{{ heading }}>
+    <{{ heading }} class="card__title"><a href="{{ href }}"{{ movie.title|lang_attr }}><span class="card__title-text">{% if movie.title %}{{ movie.title|highlight(highlight_terms|default([])) }}{% else %}{{ tr("common.untitled") }}{% endif %}</span></a></{{ heading }}>
     <p class="sr-only">{{ tr("card.stats", views=movie.view_count|number, favorites=movie.favorite_count|number) }}</p>
+    {% if (show_author and movie.author_name) or movie.published_at %}
     <p class="card__meta">
-      {% if movie.author_id is not none %}
-      <a class="card__author" href="/?author_any={{ movie.author_id }}">{{ movie.author_name }}</a>
-      {% elif movie.author_name %}
-      <span class="card__author">{{ movie.author_name }}</span>
+      {% if show_author and movie.author_id is not none %}
+      <a class="card__author" href="/?author_any={{ movie.author_id }}" title="{{ movie.author_name }}"{{ movie.author_name|lang_attr }}><span class="card__author-text">{{ movie.author_name }}</span></a>
+      {% elif show_author and movie.author_name %}
+      <span class="card__author" title="{{ movie.author_name }}"{{ movie.author_name|lang_attr }}><span class="card__author-text">{{ movie.author_name }}</span></span>
       {% endif %}
       {% if movie.published_at %}
       <time class="card__time" datetime="{{ movie.published_at|iso_datetime }}" title="{{ movie.published_at }}">{{ movie.published_at|reltime }}</time>
       {% endif %}
     </p>
+    {% endif %}
     {% if show_tags and movie.tags %}
+    {% set extra_wide = movie.tags|length - 3 %}
+    {% set extra_narrow = movie.tags|length - 2 %}
     <ul class="card__tags" aria-label="{{ tr('detail.tag') }}">
       {% for tag in movie.tags[:3] %}
-      <li><a class="tag" href="/?tag_any={{ tag.id }}"{{ tag.name|lang_attr }}>{{ tag.name }}</a></li>
+      <li{% if loop.index == 3 %} class="card__tag-third"{% endif %}><a class="tag" href="/?tag_any={{ tag.id }}" title="{{ tag.name }}"{{ tag.name|lang_attr }}><span class="tag__text">{{ tag.name }}</span></a></li>
       {% endfor %}
+      {% if extra_wide > 0 %}
+      <li class="card__tag-more card__tag-more--wide"><span class="tag tag--more" title="{{ tr('card.more_tags', count=extra_wide) }}">+{{ extra_wide }}<span class="sr-only"> {{ tr("card.more_tags", count=extra_wide) }}</span></span></li>
+      {% endif %}
+      {% if extra_narrow > 0 %}
+      <li class="card__tag-more card__tag-more--narrow"><span class="tag tag--more" title="{{ tr('card.more_tags', count=extra_narrow) }}">+{{ extra_narrow }}<span class="sr-only"> {{ tr("card.more_tags", count=extra_narrow) }}</span></span></li>
+      {% endif %}
     </ul>
     {% endif %}
   </div>
 </article>
 {%- endmacro %}
 
-{% macro card_grid(movies, heading="h2", eager_count=0, show_tags=True, cls="") -%}
+{% macro card_grid(movies, heading="h2", eager_count=0, show_tags=True, show_author=True, cls="") -%}
 <div class="card-grid{% if cls %} {{ cls }}{% endif %}">
   {% for movie in movies %}
-  {{ card(movie, heading=heading, eager=loop.index <= eager_count, show_tags=show_tags) }}
+  {{ card(movie, heading=heading, eager=loop.index <= eager_count, show_tags=show_tags, show_author=show_author) }}
   {% endfor %}
 </div>
 {%- endmacro %}
@@ -85,48 +95,85 @@
 {% endif %}
 {%- endmacro %}
 
-{#- Ranking side panels, rendered in the desktop sidebar and in the mobile drawer. -#}
-{% macro sidebar_sections(sidebar, id_prefix) -%}
-{% set sections = [
-  ("characters", "sidebar.characters", "/characters", "sparkles"),
-  ("authors", "sidebar.authors", "/authors", "user"),
-  ("categories", "sidebar.categories", "/categories", "layers"),
-] %}
-{% for key, label, more, icon_name in sections %}
-<div class="side-section">
-  <div class="side-section__head">
-    <h2 class="side-section__title" id="{{ id_prefix }}-{{ key }}">{{ icon(icon_name) }}{{ tr(label) }}</h2>
-    <a class="side-section__more" href="{{ more }}">{{ tr("sidebar.more") }}<span class="sr-only"> · {{ tr(label) }}</span></a>
-  </div>
-  {% set rows = sidebar[key] %}
-  {% if rows %}
-  <ol class="side-list">
-    {% for row in rows %}
-    <li>
-      <a class="side-list__link" href="/?{{ entity_search_param[row.kind] }}={{ row.source_id }}">
-        <span class="side-list__name">{{ row.name }}</span>
-        <span class="side-list__count" title="{{ tr('entity.movie_count', count=row.movie_count, shown=row.movie_count|number) }}">{{ row.movie_count|compact }}</span>
-      </a>
-    </li>
-    {% endfor %}
-  </ol>
-  {% else %}
-  <p class="side-section__empty">{{ tr("common.no_data") }}</p>
-  {% endif %}
+{% macro preset_strip(presets, cls="") -%}
+{% if presets %}
+<div class="preset-strip{% if cls %} {{ cls }}{% endif %}" role="group" aria-label="{{ tr('workbench.presets') }}">
+  {% for preset in presets %}
+  <a class="preset-chip{% if preset.active %} is-active{% endif %}" href="{{ preset.href }}" data-preset-field="{{ preset.field }}" data-preset-clear="{{ preset.clear_field }}" data-preset-value="{{ preset.value }}"{% if preset.active %} aria-current="true"{% endif %}>{{ preset.label }}</a>
+  {% endfor %}
 </div>
-{% endfor %}
+{% endif %}
 {%- endmacro %}
 
-{#- WAI-ARIA 1.2 combobox with a chip list; the hidden input carries the comma-separated ids. -#}
+{#- Persistent 1-click Boolean Facet Workbench rendered on the desktop search surface. -#}
+{% macro workbench_rail(workbench, presets, dataset) -%}
+{% if presets %}
+<section class="wb-section wb-section--presets" aria-labelledby="wb-presets-title">
+  <div class="wb-section__head">
+    <h2 class="wb-section__title" id="wb-presets-title">{{ icon("clock") }}<span>{{ tr("workbench.presets") }}</span></h2>
+  </div>
+  {{ preset_strip(presets) }}
+</section>
+{% endif %}
+
+{% for section in workbench %}
+{% set label_key = "nav." ~ section.kind %}
+{% set is_req = section.kind == "tags" %}
+<section class="wb-section" aria-labelledby="wb-{{ section.kind }}">
+  <div class="wb-section__head">
+    <h2 class="wb-section__title" id="wb-{{ section.kind }}">{{ icon(section.icon) }}<span>{{ tr(label_key) }}</span></h2>
+    <a class="wb-section__more" href="{{ section.more_href }}">{{ tr("sidebar.more") }}<span class="sr-only"> · {{ tr(label_key) }}</span></a>
+  </div>
+  {% if loop.first %}
+  <p class="wb-note">{{ tr("workbench.corpus_note") }}</p>
+  {% endif %}
+  {% if section["items"] %}
+  <ul class="wb-list">
+    {% for row in section["items"] %}
+    {% set inc_label = tr("workbench.include_tag", name=row.name) if is_req else tr("workbench.include_entity", name=row.name) %}
+    {% set exc_label = tr("workbench.exclude_entity", name=row.name) %}
+    <li class="wb-row{% if is_req %} wb-row--require{% endif %}{% if row.include_active %} is-included{% elif row.exclude_active %} is-excluded{% endif %}">
+      <a class="wb-row__link" href="{{ row.solo_href }}" title="{{ row.name }}"{{ row.name|lang_attr }}>
+        <span class="wb-row__name">{{ row.name }}</span>
+        <span class="wb-row__count" title="{{ tr('entity.movie_count', count=row.movie_count, shown=row.movie_count|number) }}">{{ row.movie_count|compact }}</span>
+      </a>
+      <span class="wb-row__ops">
+        <a class="wb-op wb-op--inc{% if is_req %} wb-op--req{% endif %}{% if row.include_active %} is-active{% endif %}" href="{{ row.include_href }}" aria-label="{{ inc_label }}" title="{{ inc_label }}"{% if row.include_active %} aria-current="true"{% endif %}>{{ icon("plus") }}</a>
+        <a class="wb-op wb-op--exc{% if row.exclude_active %} is-active{% endif %}" href="{{ row.exclude_href }}" aria-label="{{ exc_label }}" title="{{ exc_label }}"{% if row.exclude_active %} aria-current="true"{% endif %}>{{ icon("minus") }}</a>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="wb-empty">{{ tr("common.no_data") }}</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% if dataset %}
+<div class="wb-telemetry">
+  <p class="wb-telemetry__count">{{ icon("database") }}<span>{{ tr("footer.movies", count=dataset.movie_count, shown=dataset.movie_count|number) }}</span></p>
+  <p class="wb-telemetry__sync">
+    {% if dataset.last_success_at %}
+    {{ tr("footer.updated") }} <time datetime="{{ dataset.last_success_at }}">{{ dataset.last_success_at|timestamp }}</time>
+    {% else %}
+    {{ tr("footer.never_synced") }}
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+{%- endmacro %}
+
+{#- WAI-ARIA 1.2 combobox with a chip list; hidden input carries IDs and text input carries No-JS fallback. -#}
 {% macro combobox(group) -%}
 {% set base_id = "f-" ~ group.name %}
-<div class="combo{% if group.negative %} combo--negative{% endif %}" data-combobox data-api="{{ group.api }}">
+<div class="combo{% if group.negative %} combo--negative{% elif group.require %} combo--require{% endif %}" data-combobox data-api="{{ group.api }}">
   <label class="field__label" for="{{ base_id }}">{{ tr("filter." ~ group.name ~ ".title") }}</label>
   <p class="field__hint" id="{{ base_id }}-hint">{{ tr("filter." ~ group.name ~ ".desc") }}</p>
   <input type="hidden" name="{{ group.name }}" value="{{ group.value }}" data-combo-value>
   <ul class="chips" data-combo-chips aria-label="{{ tr('filter.selected') }}">
     {% for item in group.selected %}
-    <li class="chip{% if group.negative %} chip--negative{% endif %}" data-id="{{ item.id }}">
+    <li class="chip{% if group.negative %} chip--negative{% elif group.require %} chip--require{% endif %}" data-id="{{ item.id }}">
       <span class="chip__label">{{ item.name }}</span>
       <button class="chip__remove" type="button" aria-label="{{ tr('common.remove', name=item.name) }}">{{ icon("x") }}</button>
     </li>
@@ -134,7 +181,8 @@
   </ul>
   <div class="combo__field">
     {{ icon("search", "combo__icon") }}
-    <input class="input combo__input" id="{{ base_id }}" type="text" role="combobox" autocomplete="off" spellcheck="false"
+    <input class="input combo__input" id="{{ base_id }}" name="q_{{ group.name }}" value="{{ group.pending_query }}"
+      type="text" role="combobox" autocomplete="off" spellcheck="false"
       aria-autocomplete="list" aria-expanded="false" aria-controls="{{ base_id }}-list" aria-describedby="{{ base_id }}-hint"
       placeholder="{{ tr('filter.' ~ group.name ~ '.placeholder') }}" maxlength="100">
     <div class="combo__popup" hidden>

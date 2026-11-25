@@ -217,4 +217,363 @@ def test_filters_work_without_javascript(browser: Browser, app_url: str) -> None
     page.wait_for_url("**published_from=2026-04-12**")
     expect(page.get_by_text("キヴォトス").first).to_be_visible()
     expect(page.get_by_text("sunrise yelan mix")).to_have_count(0)
+
+    # Entity name filtering also works without JavaScript and redirects to clean resolved URL
+    page.goto(app_url + "/")
+    author_field = page.locator("#f-author_any")
+    if not author_field.is_visible():
+        page.locator("details", has=author_field).locator("summary").click()
+    expect(author_field).to_be_visible()
+    author_field.fill("Author Twelve")
+    page.locator('dialog#filters button[type="submit"]').click()
+    page.wait_for_url(f"{app_url}/?author_any=12")
+    assert page.url == f"{app_url}/?author_any=12"
+    expect(page.get_by_text("キヴォトス").first).to_be_visible()
+    expect(page.get_by_text("sunrise yelan mix")).to_have_count(0)
+
+    # Second sequential No-JS submit preserves existing author_any=12 hidden input
+    date_field = page.locator("#filter-published_from")
+    if not date_field.is_visible():
+        page.locator("details", has=date_field).locator("summary").click()
+    date_field.fill("2026-04-12")
+    page.locator('dialog#filters button[type="submit"]').click()
+    page.wait_for_url("**published_from=2026-04-12**")
+    assert "author_any=12" in page.url
+    assert "EntityLink" not in page.url
     context.close()
+
+
+def test_js_filter_form_emits_clean_url_and_resolves_typed_entity(page: Page, app_url: str) -> None:
+    goto(page, app_url + "/")
+    page.locator('[data-dialog-open="filters"]').first.click()
+    group = page.locator("dialog#filters details").filter(has=page.locator("#f-author_any")).first
+    group.locator("summary").click()
+    combo = page.locator("#f-author_any")
+    combo.fill("Author Eleven")
+    listbox_id = combo.get_attribute("aria-controls")
+    expect(page.locator(f"#{listbox_id} [role=option]").first).to_be_visible()
+    # Submit directly without ArrowDown/Enter: JS auto-resolves exact match and strips empty params
+    page.locator('dialog#filters button[type="submit"]').click()
+    page.wait_for_url(f"{app_url}/?author_any=11")
+    assert page.url == f"{app_url}/?author_any=11"
+
+
+def test_keyboard_tab_budget_and_mobile_fold_budget(browser: Browser, app_url: str) -> None:
+    desktop = open_page(browser, app_url, "/", viewport=DESKTOP, scheme="dark")
+    desktop.locator("#site-search").focus()
+    toolbar_tabs = 0
+    card_tabs = 0
+    for step in range(1, 15):
+        desktop.keyboard.press("Tab")
+        where = desktop.evaluate(
+            """() => {
+                const el = document.activeElement;
+                if (!el) return "";
+                if (el.closest(".toolbar")) return "toolbar";
+                if (el.closest(".card")) return "card";
+                return el.tagName;
+            }"""
+        )
+        if where == "toolbar" and not toolbar_tabs:
+            toolbar_tabs = step
+        if where == "card" and not card_tabs:
+            card_tabs = step
+            break
+    assert 1 <= toolbar_tabs <= 6, f"Expected toolbar within 6 Tabs, got {toolbar_tabs}"
+    assert 1 <= card_tabs <= 12, f"Expected first card within 12 Tabs, got {card_tabs}"
+    desktop.context.close()
+
+    mobile = open_page(browser, app_url, "/", viewport=MOBILE, scheme="dark")
+    header_box = mobile.locator(".site-header").bounding_box()
+    first_card_box = mobile.locator("main .card").first.bounding_box()
+    assert header_box is not None
+    assert header_box["height"] <= 58, header_box
+    assert first_card_box is not None
+    assert first_card_box["y"] <= 185, first_card_box
+    mobile.context.close()
+
+
+def test_detail_back_search_and_taxonomy_preserve_query_context(page: Page, app_url: str) -> None:
+    goto(page, app_url + "/?q=yelan&min_views=500")
+    page.locator("main .card__title a").first.click()
+    page.wait_for_url("**/movies/**")
+    back = page.locator("[data-back-search]")
+    expect(back).to_be_visible()
+    exc_op = page.locator('.tax-chip__op--exc[data-tax-kind="tags"]').first
+    expect(exc_op).to_be_visible()
+    exc_op.click()
+    page.wait_for_url("**tag_not=**")
+    assert "q=yelan" in page.url
+    assert "min_views=500" in page.url
+
+    # Navigating to an independent directory (/authors) clears stale sessionStorage search context
+    goto(page, app_url + "/authors")
+    page.locator(".author-row .card__title a").first.click()
+    page.wait_for_url("**/movies/**")
+    expect(page.locator("[data-back-search]")).to_have_attribute("href", "/")
+    author_inc = page.locator('.tax-chip__op--inc[data-tax-kind="authors"]').first
+    inc_href = author_inc.get_attribute("href")
+    assert inc_href is not None
+    assert "q=" not in inc_href
+
+
+def test_filter_sheet_single_keyword_sync_and_unclipped_combobox(page: Page, app_url: str) -> None:
+    goto(page, app_url + "/")
+    # Fill header search without submitting yet, then open filter sheet (single keyword authority)
+    page.locator("#site-search").fill("yelan")
+    page.locator('[data-dialog-open="filters"]').first.click()
+    expect(page.locator("#filter-q")).to_have_count(0)
+
+    # Bottom combobox (#f-tag_not) opens downward below its own input AND unclipped above .sheet__foot
+    tag_group = page.locator("dialog#filters details").filter(has=page.locator("#f-tag_not")).first
+    if not page.locator("#f-tag_not").is_visible():
+        tag_group.locator("summary").click()
+    combo = page.locator("#f-tag_not")
+    combo.click()
+    popup = page.locator("dialog#filters .combo").filter(has=combo).locator(".combo__popup")
+    expect(popup).to_be_visible()
+    combo_box = combo.bounding_box()
+    popup_box = popup.bounding_box()
+    foot_box = page.locator("dialog#filters .sheet__foot").bounding_box()
+    assert combo_box is not None
+    assert popup_box is not None
+    assert foot_box is not None
+    assert popup_box["y"] >= combo_box["y"] + combo_box["height"] - 1, (combo_box, popup_box)
+    assert popup_box["y"] + popup_box["height"] <= foot_box["y"] + 1, (popup_box, foot_box)
+
+    preset = page.locator('dialog#filters .preset-chip[data-preset-field="min_views"]')
+    preset.click()
+    assert page.url.rstrip("/") == app_url  # toggled in-place, did not discard form state
+    expect(preset).to_have_attribute("aria-current", "true")
+    expect(page.locator("#filter-min_views")).to_have_value("1000")
+    page.locator('dialog#filters button[type="submit"]').click()
+    page.wait_for_url("**min_views=1000**")
+    assert "q=yelan" in page.url
+
+
+def _assert_all_targets(page: Page, min_px: float, scope: str = "body") -> None:
+    violations = page.evaluate(
+        """({ minPx, scope }) => {
+            const root = document.querySelector(scope) || document.body;
+            const sel = 'a[href]:not([tabindex="-1"]), button, input:not([type="hidden"]), select, summary';
+            const bad = [];
+            for (const el of root.querySelectorAll(sel)) {
+                if (el.closest('[hidden], dialog:not([open]), details:not([open]) > :not(summary), .sr-only')) continue;
+                const st = getComputedStyle(el);
+                if (st.display === 'none' || st.visibility === 'hidden') continue;
+                const r = el.getBoundingClientRect();
+                if (r.width === 0 && r.height === 0) continue;
+                if (r.width < minPx || r.height < minPx) {
+                    bad.push({
+                        tag: el.tagName,
+                        cls: el.className,
+                        text: (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 24),
+                        w: Math.round(r.width * 10) / 10,
+                        h: Math.round(r.height * 10) / 10,
+                    });
+                }
+            }
+            return bad;
+        }""",
+        {"minPx": min_px, "scope": scope},
+    )
+    assert violations == [], violations
+
+
+def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, app_url: str) -> None:
+    context = browser.new_context(viewport=MOBILE, color_scheme="dark", has_touch=True, is_mobile=True)
+    hermetic(context, app_url)
+    page = context.new_page()
+
+    # Home: coarse targets >= 44x44px, scope badge visible, generous search input text width
+    page.goto(app_url + "/?q=yelan&tag_all=31&min_views=10")
+    wait_ready(page)
+    header_box = page.locator(".site-header").bounding_box()
+    first_card_box = page.locator("main .card").first.bounding_box()
+    scope_box = page.locator(".search__scope").bounding_box()
+    assert header_box is not None
+    assert header_box["height"] <= 58
+    assert first_card_box is not None
+    assert first_card_box["y"] <= 250
+    assert scope_box is not None
+    assert scope_box["width"] > 0
+    expect(page.locator(".toolbar .segmented")).to_be_hidden()
+    expect(page.locator("#sort-select option")).to_have_count(8)
+
+    visible_text_w = page.locator("#site-search").evaluate(
+        """el => {
+            const st = getComputedStyle(el);
+            return el.getBoundingClientRect().width - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
+        }"""
+    )
+    assert visible_text_w >= 145, visible_text_w
+    _assert_all_targets(page, 43.5)
+
+    # Even on 360px narrow mobile in English with active badge, unified sort + .filter-trigger fit cleanly
+    page.set_viewport_size({"width": 360, "height": 800})
+    page.goto(app_url + "/?lang=en&q=yelan&tag_all=31&min_views=10")
+    wait_ready(page)
+    sort_box = page.locator("#sort-select").bounding_box()
+    ft_metrics = page.locator(".toolbar .filter-trigger").evaluate(
+        """el => {
+            const r = el.getBoundingClientRect();
+            return { right: r.right, clientW: el.clientWidth, scrollW: el.scrollWidth };
+        }"""
+    )
+    assert sort_box is not None
+    assert sort_box["width"] >= 180, sort_box
+    assert ft_metrics["scrollW"] <= ft_metrics["clientW"] + 1, ft_metrics
+    assert ft_metrics["right"] <= 360, ft_metrics
+    page.set_viewport_size(MOBILE)
+    page.goto(app_url + "/?q=yelan&tag_all=31&min_views=10")
+    wait_ready(page)
+
+    # Mobile filter sheet: downward unclipped bottom combobox popup + all targets >= 44x44px
+    page.locator(".toolbar .filter-trigger").click()
+    expect(page.locator("dialog#filters")).to_be_visible()
+    tag_group = page.locator("dialog#filters details").filter(has=page.locator("#f-tag_not")).first
+    if not page.locator("#f-tag_not").is_visible():
+        tag_group.locator("summary").click()
+    m_combo = page.locator("#f-tag_not")
+    m_combo.click()
+    popup = page.locator("dialog#filters .combo").filter(has=m_combo).locator(".combo__popup")
+    expect(popup).to_be_visible()
+    m_combo_box = m_combo.bounding_box()
+    m_popup_box = popup.bounding_box()
+    m_foot_box = page.locator("dialog#filters .sheet__foot").bounding_box()
+    assert m_combo_box is not None
+    assert m_popup_box is not None
+    assert m_foot_box is not None
+    assert m_popup_box["y"] >= m_combo_box["y"] + m_combo_box["height"] - 1, (m_combo_box, m_popup_box)
+    assert m_popup_box["y"] + m_popup_box["height"] <= m_foot_box["y"] + 1, (m_popup_box, m_foot_box)
+    _assert_all_targets(page, 43.5, "dialog#filters")
+    page.keyboard.press("Escape")
+    page.keyboard.press("Escape")
+
+    # Mobile navigation drawer: language + theme controls accessible, >= 44x44px, and unclipped in Japanese
+    page.set_viewport_size({"width": 360, "height": 800})
+    page.goto(app_url + "/?lang=ja")
+    wait_ready(page)
+    page.locator(".site-header__menu").click()
+    expect(page.locator("dialog#drawer")).to_be_visible()
+    expect(page.locator("dialog#drawer .drawer__lang").first).to_be_visible()
+    expect(page.locator("dialog#drawer .drawer__theme")).to_be_visible()
+    drawer_w = page.locator("dialog#drawer").evaluate(
+        "el => ({ clientW: el.clientWidth, scrollW: el.scrollWidth })"
+    )
+    assert drawer_w["scrollW"] <= drawer_w["clientW"] + 1, drawer_w
+    _assert_all_targets(page, 43.5, "dialog#drawer")
+    page.keyboard.press("Escape")
+    page.set_viewport_size(MOBILE)
+
+    # Detail: h1 title and primary Watch CTA appear ABOVE author comment on mobile; all targets >= 44x44px
+    page.goto(app_url + "/movies/200")
+    wait_ready(page)
+    h1_box = page.locator("h1.detail__title").bounding_box()
+    cta_box = page.locator(".detail__actions .btn").first.bounding_box()
+    comment_box = page.locator(".detail__comment").bounding_box()
+    assert h1_box is not None
+    assert cta_box is not None
+    assert comment_box is not None
+    assert h1_box["y"] < cta_box["y"] < comment_box["y"]
+    headings = page.locator("main :is(h1, h2, h3)").evaluate_all("els => els.map(e => e.tagName)")
+    assert headings[0] == "H1"
+    _assert_all_targets(page, 43.5)
+
+    # Rankings: 2-row compact mobile layout keeps ALL 3 metrics (works + unit, likes, views) visible
+    page.goto(app_url + "/tags")
+    wait_ready(page)
+    table_box = page.locator(".rank-table").bounding_box()
+    row = page.locator(".rank-row").first
+    badge_box = row.locator(".rank-badge").bounding_box()
+    works_box = row.locator(".rank-row__works").bounding_box()
+    fav_box = row.locator(".rank-row__fav").bounding_box()
+    views_box = row.locator(".rank-row__views").bounding_box()
+    expect(row.locator(".rank-row__unit")).to_be_visible()
+    assert table_box is not None
+    assert badge_box is not None
+    assert works_box is not None
+    assert fav_box is not None
+    assert views_box is not None
+    assert works_box["x"] > badge_box["x"] + badge_box["width"]
+    assert views_box["x"] + views_box["width"] <= table_box["x"] + table_box["width"]
+    _assert_all_targets(page, 43.5)
+    context.close()
+
+    # Coarse tablet (>= 64rem): site-nav links, sidebar workbench operators (>=4px gap) & more links >= 44x44px
+    tablet = browser.new_context(viewport={"width": 1060, "height": 800}, color_scheme="dark", has_touch=True)
+    hermetic(tablet, app_url)
+    t_page = tablet.new_page()
+    t_page.goto(app_url + "/")
+    wait_ready(t_page)
+    _assert_all_targets(t_page, 43.5)
+    op_gap = t_page.locator(".wb-row__ops").first.evaluate(
+        """el => {
+            const [a, b] = el.querySelectorAll('.wb-op');
+            return b.getBoundingClientRect().left - a.getBoundingClientRect().right;
+        }"""
+    )
+    assert op_gap >= 3.5, op_gap
+    tablet.close()
+
+    # Fine desktop: all interactive controls >= 24x24px; ranking header + dir-tabs share 1 row
+    fine_page = open_page(browser, app_url, "/", viewport=DESKTOP, scheme="dark")
+    _assert_all_targets(fine_page, 23.5)
+    fine_page.goto(app_url + "/categories")
+    wait_ready(fine_page)
+    head_box = fine_page.locator(".page-head").bounding_box()
+    tabs_box = fine_page.locator(".dir-tabs").bounding_box()
+    assert head_box is not None
+    assert tabs_box is not None
+    assert abs((head_box["y"] + head_box["height"]) - (tabs_box["y"] + tabs_box["height"])) <= 24
+    fine_page.context.close()
+
+    # No-JS mobile exposes top-of-page directory navigation in a compact 2-row header (<= 104px)
+    nojs = browser.new_context(viewport={"width": 360, "height": 800}, java_script_enabled=False)
+    hermetic(nojs, app_url)
+    nojs_page = nojs.new_page()
+    nojs_page.goto(app_url + "/")
+    expect(nojs_page.locator(".site-nav a").first).to_be_visible()
+    nojs_header = nojs_page.locator(".site-header").bounding_box()
+    assert nojs_header is not None
+    assert nojs_header["height"] <= 104, nojs_header
+    nojs.close()
+
+
+def test_filter_sheet_preserves_existing_entities_without_422(page: Page, app_url: str) -> None:
+    goto(page, app_url + "/?tag_all=31,32&author_any=11")
+    # Also seed 8 selected chips in DOM to ensure >= 7 entities never exceed IdList max_length=240
+    page.evaluate(
+        """() => {
+            const combo = document.querySelector('#f-tag_not')?.closest('[data-combobox]');
+            const chips = combo?.querySelector('[data-combo-chips]');
+            const hidden = combo?.querySelector('[data-combo-value]');
+            if (!chips || !hidden) return;
+            const ids = ['101', '102', '103', '104', '105', '106', '107', '108'];
+            hidden.value = ids.join(',');
+        }"""
+    )
+    page.locator('[data-dialog-open="filters"]').first.click()
+    preset = page.locator('dialog#filters .preset-chip[data-preset-field="min_views"]')
+    preset.click()
+    page.locator('dialog#filters button[type="submit"]').click()
+    page.wait_for_url("**min_views=1000**")
+    assert "EntityLink" not in page.url
+    assert "author_any=11" in page.url
+    assert "tag_all=31%2C32" in page.url
+    expect(page.locator(".error-page")).to_have_count(0)
+
+
+def test_empty_db_mobile_onboarding_axe_and_untruncated_command(browser: Browser, empty_app_url: str) -> None:
+    for scheme in ("light", "dark"):
+        page = open_page(browser, empty_app_url, "/?lang=en", viewport=MOBILE, scheme=scheme)
+        cmd_metrics = page.locator("#sync-command").evaluate(
+            "el => ({ clientW: el.clientWidth, scrollW: el.scrollWidth })"
+        )
+        assert cmd_metrics["scrollW"] <= cmd_metrics["clientW"] + 1, cmd_metrics
+        results = Axe().run(
+            page,
+            options={"runOnly": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"]},
+        )
+        assert results.violations_count == 0, results.generate_report()
+        page.context.close()
