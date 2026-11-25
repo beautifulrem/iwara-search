@@ -1721,7 +1721,17 @@
     color: var(--text-2);
     cursor: pointer;
 
-    & input { position: absolute; opacity: 0; inset: -1px; margin: 0; cursor: pointer; }
+    & input {
+      appearance: none;
+      -webkit-appearance: none;
+      position: absolute;
+      opacity: 0;
+      inset: -1px;
+      inline-size: calc(100% + 2px);
+      block-size: calc(100% + 2px);
+      margin: 0;
+      cursor: pointer;
+    }
     &:hover { color: var(--text); background: var(--surface-3); }
     &:has(input:checked) { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent); }
     &:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
