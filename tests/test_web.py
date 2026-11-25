@@ -580,3 +580,60 @@ def test_filter_groups_serialize_entity_ids_not_repr(client: TestClient) -> None
     assert "EntityLink" not in html
     assert 'name="tag_all" value="31,32" data-combo-value' in html
     assert 'name="author_any" value="11" data-combo-value' in html
+
+
+def test_conditional_304_preserves_lang_cookie_and_never_skips_303_redirects(
+    client: TestClient,
+) -> None:
+    first_en = client.get("/?lang=en")
+    assert first_en.status_code == 200
+    etag_en = first_en.headers["etag"]
+
+    client.get("/?lang=ja")
+    assert client.cookies.get("ui_lang") == "ja"
+
+    # Navigating back to cached /?lang=en with If-None-Match returns 304 AND updates ui_lang cookie
+    cached_en = client.get("/?lang=en", headers={"If-None-Match": etag_en})
+    assert cached_en.status_code == 304
+    assert "ui_lang=en" in cached_en.headers.get("set-cookie", "")
+
+    # Blank params, pending q_* params, and inverted ranges redirect with 303 even with If-None-Match: *
+    blank = client.get("/?q=", headers={"If-None-Match": "*"}, follow_redirects=False)
+    assert blank.status_code == 303
+    assert blank.headers["location"] == "/"
+
+    swapped = client.get(
+        "/?min_views=500&max_views=100&published_from=2026-05-01&published_to=2026-01-01",
+        headers={"If-None-Match": "*"},
+        follow_redirects=False,
+    )
+    assert swapped.status_code == 303
+    assert swapped.headers["location"] == (
+        "/?published_from=2026-01-01&published_to=2026-05-01&min_views=100&max_views=500"
+    )
+
+
+def test_readyz_missing_db_returns_503_and_head_supported_on_ops_and_api(
+    client: TestClient, seeded: CrawlStore, db_path: Path, tmp_path: Path
+) -> None:
+    for route, expected in (
+        ("/robots.txt", 200),
+        ("/favicon.ico", 301),
+        ("/readyz", 200),
+        ("/healthz", 200),
+        ("/api/tags?query=alpha", 200),
+    ):
+        assert client.head(route, follow_redirects=False).status_code == expected
+
+    with TestClient(create_app(get_settings(db_path=db_path)), client=("127.0.0.1", 1)) as local:
+        assert local.head("/metrics").status_code == 200
+
+    # Delete the underlying SQLite file after startup to simulate missing/unmounted volume
+    gone_db = tmp_path / "vanished.sqlite3"
+    app = create_app(get_settings(db_path=gone_db))
+    with TestClient(app) as temp_client:
+        temp_client.app.state.search_iwara.pool.close()  # type: ignore[union-attr]
+        gone_db.unlink()
+        ready = temp_client.get("/readyz")
+        assert ready.status_code == 503
+        assert ready.json()["status"] == "unavailable"

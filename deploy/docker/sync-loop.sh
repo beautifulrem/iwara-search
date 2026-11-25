@@ -11,23 +11,44 @@ set -u
 
 interval="${SYNC_INTERVAL_SECONDS:-21600}"
 jitter_max="${SYNC_JITTER_SECONDS:-600}"
+initial_delay_max="${SYNC_INITIAL_DELAY_SECONDS:-0}"
 marker="${SYNC_DRIFT_MARKER:-/data/.sync-parser-drift}"
+sleep_pid=""
+
+cleanup() {
+  if [ -n "$sleep_pid" ]; then
+    kill "$sleep_pid" 2>/dev/null || true
+  fi
+  exit 0
+}
+trap cleanup INT TERM
 
 log() { printf 'sync-loop: %s\n' "$*" >&2; }
-jitter() { python -c 'import random, sys; print(random.randint(0, int(sys.argv[1])))' "$jitter_max"; }
+rand_up_to() { python -c 'import random, sys; print(random.randint(0, max(0, int(sys.argv[1]))))' "$1"; }
+sleep_interruptible() {
+  seconds="$1"
+  [ "$seconds" -le 0 ] && return 0
+  sleep "$seconds" &
+  sleep_pid=$!
+  wait "$sleep_pid" 2>/dev/null || true
+  sleep_pid=""
+}
 
 version="$(search-iwara --version 2>/dev/null || echo unknown)"
 if [ -f "$marker" ]; then
   if [ "$(cat "$marker")" = "$version" ]; then
     log "parser drift was detected with ${version}; not syncing until the image is upgraded" \
         "(or remove ${marker} after fixing the parser)"
-    while :; do sleep 3600; done
+    while :; do sleep_interruptible 3600; done
   fi
   log "image changed since the parser drift (${version}); resuming"
   rm -f "$marker"
 fi
 
-sleep "$(jitter)"  # spread the first run so replicas/hosts do not align
+if [ "$initial_delay_max" -gt 0 ]; then
+  sleep_interruptible "$(rand_up_to "$initial_delay_max")"
+fi
+
 while :; do
   search-iwara sync latest
   code=$?
@@ -39,7 +60,8 @@ while :; do
       printf '%s' "$version" > "$marker"
       exit 2
       ;;
+    143) exit 0 ;;
     *) log "unexpected exit code ${code}; retrying next cycle" ;;
   esac
-  sleep $((interval + $(jitter)))
+  sleep_interruptible $((interval + $(rand_up_to "$jitter_max")))
 done

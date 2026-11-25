@@ -316,3 +316,58 @@ def test_robots_unreachable_disallows_and_is_cached(tmp_path, response):  # type
 
 def test_retry_after_with_unicode_digits_is_ignored() -> None:
     assert parse_retry_after("²") is None
+
+
+def test_redirects_validate_origin_robots_and_hop_limit(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from search_iwara.crawler import ResponseTooLargeError, UnsafeRedirectError
+
+    # 1. Valid same-site redirect (www.oreno3d.com -> oreno3d.com) succeeds
+    def valid_redirect(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /private/\n")
+        if request.url.path == "/movies/101":
+            return httpx.Response(301, headers={"Location": "https://www.oreno3d.com/movies/102"})
+        if request.url.path == "/movies/102":
+            return httpx.Response(200, text=DETAIL_HTML)
+        return httpx.Response(404)
+
+    detail = run(make_settings(tmp_path), valid_redirect, lambda c: c.fetch_movie_detail(101))
+    assert detail.title == "Alpha Signal"
+
+    # 2. Off-origin redirect (SSRF attempt) is blocked immediately
+    def off_origin(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(302, headers={"Location": "http://127.0.0.1:8080/admin"})
+
+    with pytest.raises(UnsafeRedirectError, match="off-origin"):
+        run(make_settings(tmp_path), off_origin, lambda c: c.fetch_movie_detail(101))
+
+    # 3. Redirect onto a robots.txt-disallowed path is blocked on the redirect hop
+    def robots_bypass(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /private/\n")
+        if request.url.path == "/movies/101":
+            return httpx.Response(302, headers={"Location": "/private/secret"})
+        return httpx.Response(200, text=DETAIL_HTML)
+
+    with pytest.raises(RobotsDisallowedError):
+        run(make_settings(tmp_path), robots_bypass, lambda c: c.fetch_movie_detail(101))
+
+    # 4. Redirect loop > 5 hops is aborted
+    def loop_redirect(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(302, headers={"Location": "/movies/101"})
+
+    with pytest.raises(UnsafeRedirectError, match="exceeded"):
+        run(make_settings(tmp_path), loop_redirect, lambda c: c.fetch_movie_detail(101))
+
+    # 5. Oversized response body is aborted without OOM
+    def huge_response(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(200, headers={"Content-Length": "999999999"}, content=b"x")
+
+    with pytest.raises(ResponseTooLargeError):
+        run(make_settings(tmp_path), huge_response, lambda c: c.fetch_movie_detail(101))

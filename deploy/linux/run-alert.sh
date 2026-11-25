@@ -31,12 +31,36 @@ fi
 ALERT_UNIT="${unit}" ALERT_HOST="${host}" ALERT_RESULT="${result}" \
 ALERT_EXIT="${exit_status}" ALERT_MESSAGE="${message}" \
 exec "${python_bin}" - <<'PY'
+import ipaddress
 import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 
+raw_url = os.environ["SEARCH_IWARA_ALERT_WEBHOOK"].strip()
+parts = urllib.parse.urlsplit(raw_url)
+host = (parts.hostname or "").lower()
+is_loopback = host == "localhost"
+if not is_loopback and host:
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = False
+if not host or (parts.scheme != "https" and not (parts.scheme == "http" and is_loopback)):
+    print(f"<3>search-iwara ALERT: refusing unsafe webhook URL scheme/host: {parts.scheme}://{host}")
+    sys.exit(1)
+
+safe_url = urllib.parse.urlunsplit(
+    (
+        parts.scheme,
+        parts.netloc,
+        urllib.parse.quote(parts.path, safe="/:@!$&'()*+,;=-._~%"),
+        urllib.parse.quote(parts.query, safe="=&/:@!$'()*+,;-._~%?"),
+        "",
+    )
+)
 payload = {
     "text": os.environ["ALERT_MESSAGE"],
     "unit": os.environ["ALERT_UNIT"],
@@ -46,7 +70,7 @@ payload = {
     "timestamp": int(time.time()),
 }
 request = urllib.request.Request(
-    os.environ["SEARCH_IWARA_ALERT_WEBHOOK"],
+    safe_url,
     data=json.dumps(payload).encode(),
     headers={"Content-Type": "application/json", "User-Agent": "search-iwara-alert"},
     method="POST",

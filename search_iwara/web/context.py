@@ -18,7 +18,7 @@ from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 
 from ..config import Settings
-from ..i18n import LANGUAGE_BY_CODE, LANGUAGES, Translator, build_translator, resolve_lang
+from ..i18n import LANGUAGE_BY_CODE, LANGUAGES, SUPPORTED_LANGS, Translator, build_translator, resolve_lang
 from ..models import (
     DatasetStatus,
     EntityKind,
@@ -345,15 +345,30 @@ def page_etag(request: Request, state: AppState, lang: str, *, extra: str = "") 
     return 'W/"' + hashlib.blake2b(material.encode(), digest_size=10).hexdigest() + '"'
 
 
+def apply_lang_cookie(request: Request, response: Response) -> None:
+    lang_param = request.query_params.get("lang")
+    if lang_param in SUPPORTED_LANGS:
+        response.set_cookie(
+            LANG_COOKIE,
+            lang_param,
+            max_age=60 * 60 * 24 * 365,
+            samesite="lax",
+            httponly=True,
+            secure=(request.url.scheme == "https"),
+        )
+
+
 def not_modified(request: Request, etag: str) -> Response | None:
     candidates = {tag.strip() for tag in request.headers.get("if-none-match", "").split(",")}
     if etag in candidates or "*" in candidates:
-        # RFC 9110 §15.4.5: a 304 carries the same Vary/ETag/Cache-Control a 200 would.
-        return Response(
+        # RFC 9110 §15.4.5: a 304 carries the same Vary/ETag/Cache-Control a 200 would,
+        # and must still update the language cookie when ?lang= was explicitly requested.
+        response = Response(
             status_code=304,
-            # GZipMiddleware appends Accept-Encoding to the (compressed) 200; mirror it here.
             headers={"ETag": etag, "Cache-Control": "no-cache", "Vary": f"{PAGE_VARY}, Accept-Encoding"},
         )
+        apply_lang_cookie(request, response)
+        return response
     return None
 
 

@@ -21,14 +21,18 @@
     proxy_read_timeout 60s;
     proxy_redirect off;
 __HSTS_HEADER__
-    # Static assets are fingerprinted with ?v=<hash>, so they can be cached
-    # for a year and served straight from disk without touching the app.
+    # Static assets fingerprinted with ?v=<hash> get 1y immutable caching; unversioned
+    # files (manifest.webmanifest, favicon.svg) get a 1h TTL via $search_iwara_static_cache.
     location /static/ {
         alias __APP_DIR__/search_iwara/static/;
         access_log off;
-        expires 1y;
-        add_header Cache-Control "public, immutable" always;
+        add_header Cache-Control $search_iwara_static_cache always;
+        add_header Content-Security-Policy "default-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" always;
         add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Resource-Policy "same-origin" always;
 __HSTS_HEADER_NESTED__    }
 
     # Prometheus metrics: loopback only (scrape from the host or via a tunnel).

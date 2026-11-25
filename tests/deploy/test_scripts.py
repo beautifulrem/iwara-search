@@ -48,3 +48,61 @@ def test_dockerfile_pins_base_images_by_digest():
     for image in images:
         # literal tag@digest so Dependabot can bump both
         assert re.fullmatch(r"[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}", image), image
+
+
+def test_sync_loop_runs_immediately_and_exits_on_sigterm(tmp_path: Path):
+    import os
+    import signal
+    import time
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    marker = tmp_path / "synced"
+    fake_cli = bin_dir / "search-iwara"
+    fake_cli.write_text(
+        f'#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.3.0; exit 0; fi\ntouch {marker}\nexit 0\n',
+        encoding="utf-8",
+    )
+    fake_cli.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "SYNC_INTERVAL_SECONDS": "300",
+        "SYNC_JITTER_SECONDS": "0",
+        "SYNC_DRIFT_MARKER": str(tmp_path / "drift"),
+    }
+    proc = subprocess.Popen(["sh", str(REPO_ROOT / "deploy" / "docker" / "sync-loop.sh")], env=env)
+    try:
+        for _ in range(40):
+            if marker.exists():
+                break
+            time.sleep(0.05)
+        assert marker.exists(), "sync-loop did not run initial sync immediately"
+        time.sleep(0.1)
+        t0 = time.monotonic()
+        proc.send_signal(signal.SIGTERM)
+        code = proc.wait(timeout=3.0)
+        assert code == 0
+        assert time.monotonic() - t0 < 1.5
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_run_alert_rejects_unsafe_file_webhook(tmp_path: Path):
+    import os
+
+    env = {
+        **os.environ,
+        "APP_DIR": str(REPO_ROOT),
+        "SEARCH_IWARA_ALERT_WEBHOOK": "file:///etc/passwd",
+    }
+    res = subprocess.run(
+        ["bash", str(DEPLOY_DIR / "run-alert.sh"), "search-iwara-sync.service"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 1
+    assert "refusing unsafe webhook URL" in res.stdout

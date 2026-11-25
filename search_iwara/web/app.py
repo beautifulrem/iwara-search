@@ -116,7 +116,13 @@ def _error_page(request: Request, status_code: int, *, detail: Any = None) -> Re
         return JSONResponse({"detail": detail or "error"}, status_code=status_code)
     state: AppState = request.app.state.search_iwara
     lang = request_lang(request)
-    base = base_context(request, state, lang=lang)
+    rankings: RankingStore | None = None
+    if status_code < 500:
+        try:
+            rankings = RankingStore(state.pool.get())
+        except Exception:  # never mask the original error response if DB is down
+            rankings = None
+    base = base_context(request, state, lang=lang, rankings=rankings)
     base["page_title"] = f"{status_code} · {base['tr']('brand')}"
     context: ErrorContext = {
         **base,

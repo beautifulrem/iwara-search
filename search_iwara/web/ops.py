@@ -13,7 +13,8 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse,
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ..models import RANKING_KINDS
-from ..storage import SCHEMA_VERSION
+from ..storage import SCHEMA_VERSION, StorageError
+from ..storage.sql import active_movie_count
 from .context import StateDep
 
 router = APIRouter(include_in_schema=False)
@@ -36,7 +37,7 @@ def readyz(state: StateDep) -> JSONResponse:
         connection = state.pool.get()
         version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         connection.execute("SELECT 1 FROM movies LIMIT 1").fetchall()
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, StorageError) as exc:
         return JSONResponse({"status": "unavailable", "error": type(exc).__name__}, status_code=503)
     if version != SCHEMA_VERSION:
         return JSONResponse(
@@ -52,7 +53,7 @@ def _is_loopback(host: str | None) -> bool:
         return host == "localhost"
 
 
-@router.get("/metrics")
+@router.api_route("/metrics", methods=["GET", "HEAD"])
 def metrics(request: Request, state: StateDep) -> Response:
     """Prometheus exposition.
 
@@ -74,7 +75,7 @@ def metrics(request: Request, state: StateDep) -> Response:
     return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
 
-@router.get("/robots.txt", response_class=PlainTextResponse)
+@router.api_route("/robots.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse)
 def robots(request: Request, state: StateDep) -> str:
     if not state.settings.allow_indexing:
         return "User-agent: *\nDisallow: /\n"
@@ -99,10 +100,10 @@ def _require_indexing(state: StateDep) -> None:
         raise HTTPException(status_code=404)
 
 
-@router.get("/sitemap.xml")
+@router.api_route("/sitemap.xml", methods=["GET", "HEAD"])
 def sitemap_index(request: Request, state: StateDep) -> Response:
     _require_indexing(state)
-    total = int(state.pool.get().execute("SELECT COUNT(*) FROM movies WHERE status = 'active'").fetchone()[0])
+    total = active_movie_count(state.pool.get())
     base = str(request.base_url)
     locations = [f"{base}sitemap-pages.xml"]
     locations += [f"{base}sitemap-movies-{n}.xml" for n in range(1, -(-total // SITEMAP_CHUNK) + 1)]
@@ -111,7 +112,7 @@ def sitemap_index(request: Request, state: StateDep) -> Response:
     return Response(xml, media_type=XML_MEDIA_TYPE)
 
 
-@router.get("/sitemap-pages.xml")
+@router.api_route("/sitemap-pages.xml", methods=["GET", "HEAD"])
 def sitemap_pages(request: Request, state: StateDep) -> Response:
     _require_indexing(state)
     base = str(request.base_url)
@@ -121,7 +122,7 @@ def sitemap_pages(request: Request, state: StateDep) -> Response:
     )
 
 
-@router.get("/sitemap-movies-{chunk}.xml")
+@router.api_route("/sitemap-movies-{chunk}.xml", methods=["GET", "HEAD"])
 def sitemap_movies(
     request: Request, state: StateDep, chunk: Annotated[int, Path(ge=1, le=10_000)]
 ) -> Response:
@@ -141,6 +142,6 @@ def sitemap_movies(
     return Response(_urlset([(f"{base}movies/{row[0]}", row[1]) for row in rows]), media_type=XML_MEDIA_TYPE)
 
 
-@router.get("/favicon.ico")
+@router.api_route("/favicon.ico", methods=["GET", "HEAD"])
 def favicon() -> RedirectResponse:
     return RedirectResponse("/static/favicon.svg", status_code=301)

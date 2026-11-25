@@ -111,11 +111,19 @@ def test_default_config_is_polite_and_uses_dedicated_account():
         ({"max_pages": "²"}, "max_pages"),
         ({"metrics_token": "short"}, "metrics_token"),
         ({"metrics_token": "has spaces in the token value"}, "metrics_token"),
+        ({"alert_webhook": "file:///etc/passwd"}, "alert_webhook"),
+        ({"alert_webhook": "http://remote.example.com/hook"}, "alert_webhook"),
+        ({"alert_webhook": "https://user:pass@ntfy.sh/topic"}, "alert_webhook"),
     ],
 )
 def test_validate_config_rejects_bad_values(overrides, fragment):
     errors = cfg.validate_config(make_config(**overrides))
     assert any(fragment in error for error in errors), errors
+
+
+def test_validate_config_allows_loopback_http_webhook():
+    assert cfg.validate_config(make_config(alert_webhook="http://127.0.0.1:9099/hook")) == []
+    assert cfg.validate_config(make_config(alert_webhook="http://localhost:9099/hook")) == []
 
 
 def test_metrics_token_is_generated_only_for_public_binds():

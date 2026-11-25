@@ -1,14 +1,18 @@
 """A polite, resilient HTTP client for oreno3d.com.
 
-Politeness and resilience are layered, from the outside in:
+Politeness, safety and resilience are layered, from the outside in:
 
-1. ``robots.txt`` is fetched once and honoured (including ``Crawl-delay``).
-2. A process-wide token bucket caps the request *rate*; a semaphore caps *concurrency*.
-3. The bucket adapts (AIMD): every 429/503 halves the rate, sustained success slowly
-   restores it — the same idea as Scrapy's AutoThrottle.
-4. Errors are classified: 404/410 are terminal "not found", other 4xx are terminal client
-   errors, while 408/425/429/5xx, timeouts and transport errors are retried with capped
-   exponential backoff + full jitter, preferring the server's ``Retry-After`` when given.
+1. ``robots.txt`` is fetched once and honoured (including ``Crawl-delay``) on initial URLs and
+   every redirect hop (RFC 9309 §2.3–2.5).
+2. Redirects are followed manually (<= 5 hops) only to the configured origin/subdomains over
+   HTTP(S), preventing off-origin SSRF or ``robots.txt`` bypasses.
+3. Streaming byte caps (2 MiB for ``robots.txt``, 10 MiB for HTML) bound memory against malformed
+   or infinite upstream streams.
+4. A process-wide token bucket caps the request *rate*; a semaphore caps *concurrency*.
+5. The bucket adapts (AIMD): every 429/503 halves the rate, sustained success slowly restores it.
+6. Errors are classified: 404/410 are terminal "not found", other 4xx are terminal client errors,
+   while 408/425/429/5xx, timeouts and transport errors are retried with capped exponential
+   backoff + full jitter, preferring the server's ``Retry-After`` when given.
 """
 
 from __future__ import annotations
@@ -21,7 +25,8 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from types import TracebackType
-from typing import Self
+from typing import Final, Self
+from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -36,7 +41,11 @@ logger = logging.getLogger(__name__)
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 THROTTLE_STATUS = frozenset({429, 503})
 NOT_FOUND_STATUS = frozenset({404, 410})
+REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
 MIN_RATE = 0.1
+MAX_REDIRECTS: Final = 5
+MAX_ROBOTS_BYTES: Final = 2 * 1024 * 1024  # >= 500 KiB minimum required by RFC 9309 §2.5
+MAX_HTML_BYTES: Final = 10 * 1024 * 1024
 
 
 class CrawlerError(Exception):
@@ -77,6 +86,14 @@ class RobotsUnavailableError(CrawlerError):
     """robots.txt could not be fetched (5xx/429/network): RFC 9309 says assume full disallow."""
 
 
+class UnsafeRedirectError(CrawlerError):
+    """A redirect exceeded hop limits or pointed outside the allowed origin/scheme."""
+
+
+class ResponseTooLargeError(CrawlerError):
+    """An upstream HTTP response exceeded the configured byte ceiling."""
+
+
 def parse_retry_after(value: str | None, *, now: float | None = None) -> float | None:
     """Parse ``Retry-After`` (delta-seconds or HTTP-date) into seconds from now."""
 
@@ -99,6 +116,11 @@ def backoff_delay(attempt: int, *, base: float, cap: float, rng: random.Random) 
     """Full-jitter exponential backoff (AWS architecture blog): U(0, min(cap, base·2^n))."""
 
     return rng.uniform(0.0, min(cap, base * (2**attempt)))
+
+
+def _canonical_domain(hostname: str) -> str:
+    host = hostname.lower().rstrip(".")
+    return host[4:] if host.startswith("www.") else host
 
 
 class AdaptiveRateLimiter:
@@ -148,6 +170,10 @@ class Oreno3dClient:
     ) -> None:
         self.settings = settings
         self.base_url = settings.base_url
+        parsed_base = urlsplit(self.base_url)
+        if parsed_base.scheme not in {"http", "https"} or not parsed_base.hostname:
+            raise CrawlerConfigError(f"invalid base_url: {self.base_url!r}")
+        self._allowed_domain = _canonical_domain(parsed_base.hostname)
         self.stats = CrawlerStats()
         self._rng = rng or random.Random()  # noqa: S311 - jitter, not cryptography
         self._sleep: Callable[[float], Awaitable[None]] = sleep or asyncio.sleep
@@ -158,7 +184,7 @@ class Oreno3dClient:
                     "Accept": "text/html,application/xhtml+xml",
                     "Accept-Language": "ja,en;q=0.8",
                 },
-                follow_redirects=True,
+                follow_redirects=False,
                 timeout=httpx.Timeout(settings.request_timeout_seconds, connect=10.0),
                 limits=httpx.Limits(
                     max_connections=settings.request_concurrency,
@@ -195,13 +221,25 @@ class Oreno3dClient:
     ) -> None:
         await self.aclose()
 
-    # --- URLs --------------------------------------------------------------------------------
+    # --- URLs & origin policy ----------------------------------------------------------------
 
     def listing_url(self, page: int) -> str:
         return f"{self.base_url}/?sort=latest&page={page}"
 
     def movie_url(self, source_site_id: int) -> str:
         return f"{self.base_url}/movies/{source_site_id}"
+
+    def _validate_target_url(self, url: str) -> None:
+        parts = urlsplit(url)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise UnsafeRedirectError(f"disallowed URL scheme or missing host: {url!r}")
+        if parts.username or parts.password:
+            raise UnsafeRedirectError(f"disallowed credentials in URL: {url!r}")
+        host = _canonical_domain(parts.hostname)
+        if host != self._allowed_domain and not host.endswith("." + self._allowed_domain):
+            raise UnsafeRedirectError(
+                f"refusing off-origin request to {parts.hostname!r} (expected {self._allowed_domain!r})"
+            )
 
     # --- robots.txt --------------------------------------------------------------------------
 
@@ -224,8 +262,8 @@ class Oreno3dClient:
             url = f"{self.base_url}/robots.txt"
             parser = RobotFileParser()
             try:
-                response = await self._send(url)
-                parser.parse(response.text.splitlines())
+                text = await self._fetch_with_redirects(url, check_robots=False, max_bytes=MAX_ROBOTS_BYTES)
+                parser.parse(text.splitlines())
             except (RemoteNotFoundError, RemoteClientError):
                 parser.parse([])
             except CrawlerError as exc:
@@ -247,8 +285,24 @@ class Oreno3dClient:
 
     # --- transport ---------------------------------------------------------------------------
 
-    async def _send(self, url: str) -> httpx.Response:
-        """GET with rate limiting, error classification and jittered retries."""
+    @staticmethod
+    async def _read_bounded_body(response: httpx.Response, *, url: str, max_bytes: int) -> bytes:
+        declared_len = response.headers.get("Content-Length")
+        if declared_len and declared_len.isdigit() and int(declared_len) > max_bytes:
+            raise ResponseTooLargeError(f"{url} Content-Length {declared_len} exceeds {max_bytes} bytes")
+        chunks: list[bytes] = []
+        received = 0
+        async for chunk in response.aiter_bytes():
+            received += len(chunk)
+            if received > max_bytes:
+                raise ResponseTooLargeError(f"{url} response body exceeded {max_bytes} bytes")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    async def _send_bounded(
+        self, url: str, *, max_bytes: int
+    ) -> tuple[int, httpx.Headers, str | None, bytes]:
+        """Single-hop GET with rate limiting, bounded streaming read, and jittered retries."""
 
         attempts = self.settings.request_retries + 1
         last_error = "unknown error"
@@ -258,24 +312,29 @@ class Oreno3dClient:
             try:
                 async with self._semaphore:
                     self.stats.requests += 1
-                    response = await self._client.get(url)
+                    async with self._client.stream("GET", url) as response:
+                        status = response.status_code
+                        headers = response.headers
+                        encoding = response.encoding
+                        self.stats.status_codes[status] += 1
+                        if status in REDIRECT_STATUS:
+                            self._limiter.reward()
+                            return status, headers, encoding, b""
+                        if status < 400:
+                            body = await self._read_bounded_body(response, url=url, max_bytes=max_bytes)
+                            self._limiter.reward()
+                            return status, headers, encoding, body
+                        if status in NOT_FOUND_STATUS:
+                            raise RemoteNotFoundError(url)
+                        if status not in RETRYABLE_STATUS:
+                            raise RemoteClientError(url, status)
+                        last_error = f"HTTP {status}"
+                        if status in THROTTLE_STATUS:
+                            self.stats.throttled += 1
+                            self._limiter.penalize()
+                            retry_after = parse_retry_after(headers.get("Retry-After"))
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
-            else:
-                status = response.status_code
-                self.stats.status_codes[status] += 1
-                if status < 400:
-                    self._limiter.reward()
-                    return response
-                if status in NOT_FOUND_STATUS:
-                    raise RemoteNotFoundError(url)
-                if status not in RETRYABLE_STATUS:
-                    raise RemoteClientError(url, status)
-                last_error = f"HTTP {status}"
-                if status in THROTTLE_STATUS:
-                    self.stats.throttled += 1
-                    self._limiter.penalize()
-                    retry_after = parse_retry_after(response.headers.get("Retry-After"))
 
             if attempt + 1 >= attempts:
                 break
@@ -296,10 +355,32 @@ class Oreno3dClient:
             await self._sleep(delay)
         raise RetriesExhaustedError(url, attempts, last_error)
 
+    async def _fetch_with_redirects(self, url: str, *, check_robots: bool, max_bytes: int) -> str:
+        current = url
+        for hop in range(MAX_REDIRECTS + 1):
+            self._validate_target_url(current)
+            if check_robots:
+                await self._check_robots(current)
+            status, headers, encoding, body = await self._send_bounded(current, max_bytes=max_bytes)
+            if status in REDIRECT_STATUS:
+                if hop >= MAX_REDIRECTS:
+                    raise UnsafeRedirectError(f"exceeded {MAX_REDIRECTS} redirects starting from {url}")
+                location = headers.get("Location", "").strip()
+                if not location:
+                    raise UnsafeRedirectError(f"redirect HTTP {status} from {current} missing Location")
+                current = urljoin(current, location)
+                continue
+            codec = encoding or "utf-8"
+            try:
+                return body.decode(codec, errors="replace")
+            except LookupError:
+                return body.decode("utf-8", errors="replace")
+        raise UnsafeRedirectError(
+            f"exceeded {MAX_REDIRECTS} redirects starting from {url}"
+        )  # pragma: no cover
+
     async def fetch_text(self, url: str) -> str:
-        await self._check_robots(url)
-        response = await self._send(url)
-        return response.text
+        return await self._fetch_with_redirects(url, check_robots=True, max_bytes=MAX_HTML_BYTES)
 
     async def fetch_listing_page(self, page: int) -> ListingPage:
         html = await self.fetch_text(self.listing_url(page))

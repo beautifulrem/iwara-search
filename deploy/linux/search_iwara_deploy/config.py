@@ -6,6 +6,7 @@ read by systemd (``EnvironmentFile=``) for the app and by this manager for re-re
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import secrets
@@ -376,8 +377,31 @@ _CHECKS: Final[tuple[Check, ...]] = (
 )
 
 
+def _valid_webhook_url(url: str) -> bool:
+    if not url:
+        return True
+    from urllib.parse import urlsplit  # noqa: PLC0415
+
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").lower()
+    if not host or parts.username or parts.password:
+        return False
+    if parts.scheme == "https":
+        return True
+    if parts.scheme != "http":
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def validate_config(config: DeployConfig) -> list[str]:
     errors = [message for check in _CHECKS if (message := check(config))]
+    if not _valid_webhook_url(config.alert_webhook):
+        errors.append("alert_webhook must be blank, an https:// URL, or a loopback http:// URL")
     errors += [
         f"invalid account name: {name!r}"
         for name in (config.service_user, config.service_group)

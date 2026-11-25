@@ -26,6 +26,7 @@ class EntityOut(BaseModel):
     response_model=list[EntityOut],
     response_model_exclude_none=True,
 )
+@router.head("/{kind}", include_in_schema=False)
 def autocomplete(
     kind: str,
     params: Annotated[AutocompleteParams, Query()],

@@ -29,7 +29,6 @@ from ..models import (
 from ..utils import MAX_SAFE_INTEGER, split_query_tokens
 from .context import (
     ENTITY_SEARCH_PARAM,
-    LANG_COOKIE,
     PAGE_VARY,
     ActiveFilter,
     AppState,
@@ -48,6 +47,7 @@ from .context import (
     StateDep,
     TaxonomyChip,
     TaxonomyRow,
+    apply_lang_cookie,
     base_context,
     facet_workbench,
     not_modified,
@@ -95,11 +95,7 @@ def render(
     if etag is not None:
         response.headers["ETag"] = etag
         response.headers["Cache-Control"] = "no-cache"
-    lang_param = request.query_params.get("lang")
-    if lang_param in SUPPORTED_LANGS:
-        response.set_cookie(
-            LANG_COOKIE, lang_param, max_age=60 * 60 * 24 * 365, samesite="lax", httponly=True
-        )
+    apply_lang_cookie(request, response)
     response.headers["Vary"] = PAGE_VARY
     return response
 
@@ -343,14 +339,36 @@ def _build_workbench(
     return sections
 
 
+def _normalize_inverted_ranges(filters: SearchFilters) -> bool:
+    swapped = False
+    if filters.published_from and filters.published_to and filters.published_from > filters.published_to:
+        filters.published_from, filters.published_to = filters.published_to, filters.published_from
+        swapped = True
+    if (
+        filters.min_views is not None
+        and filters.max_views is not None
+        and filters.min_views > filters.max_views
+    ):
+        filters.min_views, filters.max_views = filters.max_views, filters.min_views
+        swapped = True
+    if (
+        filters.min_favorites is not None
+        and filters.max_favorites is not None
+        and filters.min_favorites > filters.max_favorites
+    ):
+        filters.min_favorites, filters.max_favorites = filters.max_favorites, filters.min_favorites
+        swapped = True
+    return swapped
+
+
 def _blank_param_redirect(
     request: Request,
     canonical: dict[str, str],
     unmatched: dict[str, list[str]],
     *,
-    has_pending: bool = False,
+    force_redirect: bool = False,
 ) -> RedirectResponse | None:
-    needs_redirect = has_pending or any(v == "" for v in request.query_params.values())
+    needs_redirect = force_redirect or any(v == "" for v in request.query_params.values())
     if request.method != "GET" or unmatched or not needs_redirect:
         return None
     redirect_query = dict(canonical)
@@ -358,8 +376,7 @@ def _blank_param_redirect(
     if lang_param in SUPPORTED_LANGS:
         redirect_query["lang"] = lang_param
     resp = RedirectResponse(url=search_href(redirect_query), status_code=303)
-    if lang_param in SUPPORTED_LANGS:
-        resp.set_cookie(LANG_COOKIE, lang_param, max_age=60 * 60 * 24 * 365, samesite="lax", httponly=True)
+    apply_lang_cookie(request, resp)
     return resp
 
 
@@ -372,14 +389,20 @@ def index(
     rankings: RankingDep,
 ) -> Response:
     lang = request_lang(request)
-    etag = page_etag(request, state, lang)
-    if (cached := not_modified(request, etag)) is not None:
-        return cached
-    tr = build_translator(lang)
     filters = params.to_filters()
+    range_swapped = _normalize_inverted_ranges(filters)
+    pending_queries = params.pending_entity_queries()
+    has_blank = any(v == "" for v in request.query_params.values())
+    etag = page_etag(request, state, lang)
+    if (
+        not (pending_queries or has_blank or range_swapped)
+        and (cached := not_modified(request, etag)) is not None
+    ):
+        return cached
+
+    tr = build_translator(lang)
     unmatched: dict[str, list[str]] = {}
     impossible_match = False
-    pending_queries = params.pending_entity_queries()
     for field_name, raw_text in pending_queries.items():
         matched_ids, missing_phrases = search.resolve_entity_names(ID_FILTER_KIND[field_name], raw_text)
         current_ids: list[int] = getattr(filters, field_name)
@@ -402,7 +425,7 @@ def index(
     canonical = dict(query, **({"page": str(result.page)} if result.page > 1 else {}))
     if (
         redirect_resp := _blank_param_redirect(
-            request, canonical, unmatched, has_pending=bool(pending_queries)
+            request, canonical, unmatched, force_redirect=bool(pending_queries or range_swapped)
         )
     ) is not None:
         return redirect_resp

@@ -114,8 +114,10 @@ def test_render_nginx_http_config():
     assert "server_tokens off;" in text
     assert "client_max_body_size 16k;" in text
     assert "alias /opt/search-iwara/search_iwara/static/;" in text
-    assert 'add_header Cache-Control "public, immutable" always;' in text
-    assert "expires 1y;" in text
+    assert "map $arg_v $search_iwara_static_cache" in text
+    assert "add_header Cache-Control $search_iwara_static_cache always;" in text
+    assert 'add_header Cross-Origin-Resource-Policy "same-origin" always;' in text
+    assert "add_header Content-Security-Policy" in text
     assert "limit_req_zone $binary_remote_addr zone=search_iwara_pages:10m rate=10r/s;" in text
     assert "limit_req zone=search_iwara_api burst=40 nodelay;" in text
     assert not re.search(r"__[A-Z_]+__", text)
