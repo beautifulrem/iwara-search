@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install fmt lint typecheck jscheck test cov perf e2e check serve sync migrate docker
+.PHONY: help install fmt lint typecheck jscheck test cov perf e2e check serve sync migrate docker build release
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -47,5 +47,12 @@ sync: ## Incremental sync
 migrate: ## Create/upgrade the database schema
 	uv run search-iwara db migrate
 
-docker: ## Build the container image
-	docker build -t search-iwara .
+docker: ## Build the container image locally
+	docker build -t search-iwara:local .
+
+build: ## Build wheel and sdist into dist/
+	uv build --out-dir dist
+
+release: ## Prepare a release (usage: make release VERSION=0.3.0)
+	@test -n "$(VERSION)" || (echo "usage: make release VERSION=X.Y.Z" >&2; exit 1)
+	uv run python scripts/release.py prepare "$(VERSION)"

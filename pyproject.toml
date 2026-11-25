@@ -1,6 +1,6 @@
 [project]
 name = "search-iwara"
-version = "0.2.2"
+version = "0.3.0"
 description = "Local Oreno3D metadata mirror with SQLite search and a FastAPI UI."
 readme = "README.md"
 license = "MIT"
@@ -98,7 +98,7 @@ known-first-party = ["search_iwara"]
 [tool.mypy]
 python_version = "3.13"
 strict = true
-files = ["search_iwara", "deploy/linux/search_iwara_deploy", "deploy/linux/manage.py"]
+files = ["search_iwara", "deploy/linux/search_iwara_deploy", "deploy/linux/manage.py", "scripts/release.py"]
 mypy_path = "deploy/linux"
 explicit_package_bases = true
 plugins = ["pydantic.mypy"]

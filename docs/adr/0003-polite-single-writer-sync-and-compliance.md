@@ -1,21 +1,20 @@
-# ADR-0003: Polite Single-Writer Batch Crawler, Redirect/Size Guards & Metadata Takedown Model
+# ADR-0003: Single-Writer Batch Crawler, Redirect Guards, and Takedown Tombstones
 
 - **Status**: Accepted
 - **Date**: 2026-11-25
 
 ## Context
 
-Search Iwara crawls `oreno3d.com` periodically via `systemd` timer or Docker `sync` loop. We evaluated:
-1. Crawler process separation vs in-web-process background tasks or external Redis/Celery queues.
-2. HTTP redirect and response body safety under RFC 9309 & OWASP SSRF guidelines.
-3. Handling rights-holder/operator takedowns vs transient upstream `404`/`410` removals.
+Search Iwara syncs metadata periodically from `oreno3d.com` via a `systemd` timer or Docker loop while serving concurrent web reads. Key operational concerns are isolating crawl load from web latency, bounding untrusted network responses, and distinguishing upstream removals from local operator takedowns.
 
 ## Decision
 
-1. **Retain Separate Single-Writer Batch Sync Process** (`fcntl.flock` + `CrawlStore` 25-movie transactions): Isolates read-only web workers (`PRAGMA query_only = ON`) from crawl memory/latency without requiring Redis/Celery.
-2. **Enforce Validated Redirects & Streaming Byte Caps in `Oreno3dClient`**:
-   - Set `follow_redirects=False` and validate every redirect hop (`<= 5` hops per RFC 9309 §2.4) against `http`/`https` scheme, configured `base_url` host allow-list, and `_check_robots()`.
-   - Stream HTTP bodies with hard byte ceilings (`2 MiB` for `robots.txt`, `10 MiB` for HTML) to prevent OOM.
-3. **Add Persistent `suppressed` Tombstone Status & CLI (`search-iwara db suppress` / `unsuppress`)**:
-   - Upstream `404`/`410` sets `status = 'missing'` (purging FTS postings while retaining archival metadata and allowing restoration if upstream recovers).
-   - Operator takedown (`search-iwara db suppress <source_site_id>...`) sets `status = 'suppressed'`, purges FTS postings, returns `404` on `/movies/{id}`, excludes the item from search/rankings/sitemaps, and prevents future `sync` runs from re-activating or re-fetching it.
+1. **Separate single-writer sync process**: Guard writes with an advisory `fcntl.flock` (`<db>.sync.lock`) and commit detail updates in 25-movie batches, while `search-iwara serve` opens read-only connections (`PRAGMA query_only = ON`).
+2. **Per-hop redirect validation and response size caps**: Disable automatic redirect following in `httpx` and validate every hop (`<= 5` hops) against `https` scheme, the configured `base_url` host allow-list, and RFC 9309 `robots.txt` rules. Stream response bodies with hard byte limits (`2 MiB` for `robots.txt`, `10 MiB` for HTML).
+3. **Distinct `missing` vs. `suppressed` states**:
+   - Upstream `404`/`410` or placeholder pages set `status = 'missing'`, removing FTS entries while keeping archival metadata visible on `/movies/{id}` and allowing automatic recovery if upstream restores the entry.
+   - Local takedown (`search-iwara db suppress <id>...`) sets `status = 'suppressed'`, purges FTS entries, returns `404` on `/movies/{id}`, excludes the entry from rankings and sitemaps, and prevents future syncs from re-importing it unless restored with `db unsuppress`.
+
+## Consequences
+
+- Web worker latency stays isolated from crawl bursts without introducing Redis or Celery, and operator takedowns persist cleanly across full or incremental sync runs.

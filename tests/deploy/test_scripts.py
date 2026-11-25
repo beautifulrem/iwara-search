@@ -197,3 +197,74 @@ def test_sync_loop_forwards_sigterm_to_running_child(tmp_path: Path):
     finally:
         if proc.poll() is None:
             proc.kill()
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"), key=lambda item: item.name),
+    ids=lambda item: item.name,
+)
+def test_github_workflows_pin_actions_by_commit_sha(path: Path):
+    text = path.read_text(encoding="utf-8")
+    uses = re.findall(r"^\s*-?\s*uses:\s*([^\s#]+)", text, flags=re.MULTILINE)
+    assert uses, f"{path.name} has no action steps"
+    for ref in uses:
+        assert re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", ref), f"{path.name}: unpinned action {ref}"
+
+
+def test_release_script_prepare_and_notes(tmp_path: Path):
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("release_script", REPO_ROOT / "scripts" / "release.py")
+    assert spec is not None
+    assert spec.loader is not None
+    rel = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = rel
+    spec.loader.exec_module(rel)
+
+    (tmp_path / "search_iwara").mkdir()
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "search-iwara"\nversion = "0.2.2"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "search_iwara" / "__init__.py").write_text(
+        '__version__ = "0.2.2"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\n### Added\n- Facet sidebar.\n\n## [0.2.2] - 2026-10-01\n\n### Fixed\n- Nginx.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(rel.ReleaseError, match="version mismatch"):
+        rel.build_notes(tmp_path, raw_version="v0.3.0", repo="owner/repo")
+
+    assert (
+        rel.main(["--repo-root", str(tmp_path), "prepare", "0.3.0", "--date", "2026-11-25", "--no-lock"]) == 0
+    )
+    assert rel.read_versions(tmp_path) == ("0.3.0", "0.3.0")
+
+    notes_file = tmp_path / "notes.md"
+    assert (
+        rel.main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "notes",
+                "v0.3.0",
+                "--repo",
+                "BeautifulRem/iwara-search",
+                "--output",
+                str(notes_file),
+            ]
+        )
+        == 0
+    )
+    notes = notes_file.read_text(encoding="utf-8")
+    assert "### Added\n- Facet sidebar." in notes
+    assert "ghcr.io/beautifulrem/iwara-search:0.3.0" in notes
+    assert "## [0.2.2]" not in notes
+
+    with pytest.raises(rel.ReleaseError, match="already contains"):
+        rel.prepare_release(tmp_path, raw_version="0.3.0", release_date="2026-11-25", run_lock=False)

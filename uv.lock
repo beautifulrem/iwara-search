@@ -1321,7 +1321,7 @@ wheels = [
 
 [[package]]
 name = "search-iwara"
-version = "0.2.2"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
