@@ -34,7 +34,11 @@ sleep_interruptible() {
 
 sleep_interruptible "$(jitter)"
 while :; do
-  search-iwara db backup &
+  case "${SEARCH_IWARA_BACKUP_COMPRESS:-true}" in
+    0|false|FALSE|no|NO|off|OFF) compress_flag="--no-compress" ;;
+    *) compress_flag="--compress" ;;
+  esac
+  search-iwara db backup "$compress_flag" &
   child_pid=$!
   wait "$child_pid"
   code=$?

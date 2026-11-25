@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gzip
 import logging
+import shutil
 import signal
 import sqlite3
 import sys
@@ -51,12 +53,38 @@ from .services import (
     sync_lock,
 )
 from .storage import SCHEMA_VERSION, CrawlStore, connect, migrate
+from .storage.migrations import current_version
 
 EXIT_FAILURES = 1
 EXIT_DRIFT = 2
 EXIT_LOCKED = 75
 EXIT_CONFIG = 78
 EXIT_TERMINATED = 143  # 128 + SIGTERM
+
+_MIB = 1024 * 1024
+SYNC_MIN_FREE_BYTES = 128 * _MIB
+BACKUP_MIN_FREE_BYTES = 128 * _MIB
+
+
+def _disk_reserve_bytes(total_bytes: int, target_bytes: int) -> int:
+    return min(target_bytes, max(4 * _MIB, total_bytes // 20))
+
+
+def _ensure_disk_headroom(
+    directory: Path, *, extra_bytes: int = 0, target_reserve: int, context: str
+) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    usage = shutil.disk_usage(directory)
+    required = extra_bytes + _disk_reserve_bytes(usage.total, target_reserve)
+    if usage.free < required:
+        msg = (
+            f"insufficient free disk space for {context} at {directory}: "
+            f"{usage.free // _MIB} MiB free, need >= {required // _MIB} MiB"
+        )
+        logger.error("%s", msg)
+        typer.echo(msg, err=True)
+        raise typer.Exit(EXIT_FAILURES)
+
 
 app = typer.Typer(help="Local Oreno3D metadata mirror.", no_args_is_help=True, add_completion=False)
 sync_app = typer.Typer(help="Crawl oreno3d.com into the local database.", no_args_is_help=True)
@@ -208,6 +236,11 @@ SyncAction = Callable[[SyncService, SyncProgress], Awaitable[SyncSummary]]
 
 
 def _run_sync(mode: SyncMode, settings: Settings, action: SyncAction) -> None:
+    _ensure_disk_headroom(
+        settings.db_path.parent,
+        target_reserve=SYNC_MIN_FREE_BYTES,
+        context=f"sync {mode}",
+    )
     interactive = sys.stderr.isatty()
 
     async def runner() -> SyncSummary:
@@ -328,9 +361,21 @@ def db_migrate(db_path: DbPathOption = None) -> None:
     """Create the database or upgrade its schema (idempotent)."""
 
     settings = _settings(db_path=db_path)
+    pre_size = settings.db_path.stat().st_size if settings.db_path.exists() else 0
     connection = connect(settings.db_path)
     try:
+        pre_version = current_version(connection)
         applied = migrate(connection)
+        if applied:
+            if pre_version < 5 <= SCHEMA_VERSION and pre_size >= 16 * _MIB:
+                free = shutil.disk_usage(settings.db_path.parent).free
+                if free >= pre_size + 64 * _MIB:
+                    logger.info(
+                        "compacting upgraded database via VACUUM", extra={"db": str(settings.db_path)}
+                    )
+                    connection.execute("VACUUM")
+            with contextlib.suppress(sqlite3.Error):
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
         connection.close()
     typer.echo(f"schema v{SCHEMA_VERSION} ({applied} migration(s) applied) at {settings.db_path}")
@@ -411,26 +456,72 @@ def db_unsuppress(
     typer.echo(f"unsuppressed {count} movie(s)")
 
 
+def _list_backups(target_dir: Path, stem: str) -> list[Path]:
+    prefix = f"{stem}-"
+    return sorted(
+        path
+        for path in target_dir.iterdir()
+        if path.is_file()
+        and path.name.startswith(prefix)
+        and (path.name.endswith(".sqlite3") or path.name.endswith(".sqlite3.gz"))
+    )
+
+
+def _prepare_backup_space(target_dir: Path, stem: str, db_size: int, settings: Settings) -> None:
+    for stale in target_dir.glob(f"{stem}-*.partial"):
+        stale.unlink(missing_ok=True)
+    extra_needed = int(db_size * 1.4) if settings.backup_compress else db_size
+    existing = _list_backups(target_dir, stem)
+    if len(existing) > settings.backup_keep:
+        for old in existing[: len(existing) - settings.backup_keep]:
+            old.unlink(missing_ok=True)
+        existing = _list_backups(target_dir, stem)
+    # When free space is tight and keep >= 2, rotate the oldest slot before writing so we do
+    # not temporarily hold (keep + 1) full copies on small disks while still keeping >= 1 copy.
+    usage = shutil.disk_usage(target_dir)
+    reserve = _disk_reserve_bytes(usage.total, BACKUP_MIN_FREE_BYTES)
+    if (
+        usage.free < extra_needed + reserve
+        and settings.backup_keep >= 2
+        and len(existing) >= settings.backup_keep
+    ):
+        for old in existing[: len(existing) - (settings.backup_keep - 1)]:
+            old.unlink(missing_ok=True)
+    _ensure_disk_headroom(
+        target_dir,
+        extra_bytes=extra_needed,
+        target_reserve=BACKUP_MIN_FREE_BYTES,
+        context="db backup",
+    )
+
+
 @db_app.command("backup")
 def db_backup(
     db_path: DbPathOption = None,
     dest: Annotated[Path | None, typer.Option(help="Backup directory (default: <db dir>/backups).")] = None,
     keep: Annotated[int | None, typer.Option(min=1, help="How many backups to keep (default 7).")] = None,
+    compress: Annotated[
+        bool | None,
+        typer.Option("--compress/--no-compress", help="Gzip-compress the backup (.sqlite3.gz)."),
+    ] = None,
 ) -> None:
-    """Consistent online backup via the SQLite backup API, with rotation."""
+    """Consistent online backup via the SQLite backup API, with rotation and disk-space guards."""
 
-    settings = _settings(db_path=db_path, backup_dir=dest, backup_keep=keep)
+    settings = _settings(db_path=db_path, backup_dir=dest, backup_keep=keep, backup_compress=compress)
     if not settings.db_path.exists():
         typer.echo(f"no database at {settings.db_path}", err=True)
         raise typer.Exit(1)
     target_dir = settings.resolved_backup_dir
     target_dir.mkdir(parents=True, exist_ok=True)
+    stem = settings.db_path.stem
+    _prepare_backup_space(target_dir, stem, settings.db_path.stat().st_size, settings)
+
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    target = target_dir / f"{settings.db_path.stem}-{stamp}.sqlite3"
-    partial = target.with_suffix(".partial")
+    raw_target = target_dir / f"{stem}-{stamp}.sqlite3"
+    raw_partial = target_dir / f"{stem}-{stamp}.sqlite3.partial"
 
     source = connect(settings.db_path, readonly=True)
-    destination = sqlite3.connect(partial)
+    destination = sqlite3.connect(raw_partial)
     try:
         source.backup(destination, pages=4096)
         check = destination.execute("PRAGMA quick_check").fetchone()[0]
@@ -438,16 +529,36 @@ def db_backup(
         destination.close()
         source.close()
     if check != "ok":
-        partial.unlink(missing_ok=True)
+        raw_partial.unlink(missing_ok=True)
         typer.echo(f"backup failed integrity check: {check}", err=True)
         raise typer.Exit(1)
-    partial.rename(target)
 
-    backups = sorted(target_dir.glob(f"{settings.db_path.stem}-*.sqlite3"))
+    if settings.backup_compress:
+        target = target_dir / f"{stem}-{stamp}.sqlite3.gz"
+        gz_partial = target_dir / f"{stem}-{stamp}.sqlite3.gz.partial"
+        try:
+            with raw_partial.open("rb") as src_fh, gzip.open(gz_partial, "wb", compresslevel=6) as gz_fh:
+                shutil.copyfileobj(src_fh, gz_fh, length=_MIB)
+        except BaseException:
+            gz_partial.unlink(missing_ok=True)
+            raw_partial.unlink(missing_ok=True)
+            raise
+        raw_partial.unlink(missing_ok=True)
+        gz_partial.rename(target)
+    else:
+        target = raw_target
+        raw_partial.rename(target)
+
+    backups = _list_backups(target_dir, stem)
     for old in backups[: -settings.backup_keep]:
-        old.unlink()
+        old.unlink(missing_ok=True)
     logger.info(
-        "backup written", extra={"path": str(target), "kept": min(len(backups), settings.backup_keep)}
+        "backup written",
+        extra={
+            "path": str(target),
+            "compressed": settings.backup_compress,
+            "kept": min(len(backups), settings.backup_keep),
+        },
     )
     typer.echo(str(target))
 

@@ -85,6 +85,52 @@ def test_db_backup_without_database(tmp_path: Path) -> None:
     assert "no database" in output
 
 
+def test_db_backup_compressed_rotates_legacy_and_guards_disk_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import gzip
+    import shutil
+
+    db = tmp_path / "db.sqlite3"
+    invoke("db", "migrate", "--db-path", str(db))
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    (backups / "db-20200101T000000Z.sqlite3").write_bytes(b"legacy1")
+    (backups / "db-20200102T000000Z.sqlite3").write_bytes(b"legacy2")
+    (backups / "db-stale.sqlite3.partial").write_bytes(b"partial")
+
+    code, output = invoke(
+        "db", "backup", "--compress", "--db-path", str(db), "--dest", str(backups), "--keep", "2"
+    )
+    assert code == 0, output
+    remaining = sorted(path.name for path in backups.iterdir())
+    assert len(remaining) == 2
+    assert remaining[0] == "db-20200102T000000Z.sqlite3"
+    assert remaining[1].endswith(".sqlite3.gz")
+
+    restored = tmp_path / "restored.sqlite3"
+    restored.write_bytes(gzip.decompress((backups / remaining[1]).read_bytes()))
+    copy = sqlite3.connect(restored)
+    assert copy.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+    copy.close()
+
+    # Simulate critically full disk: both backup and sync fail fast before writing
+    from typing import NamedTuple
+
+    class _Usage(NamedTuple):
+        total: int
+        used: int
+        free: int
+
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: _Usage(10 * 1024**3, 10 * 1024**3 - 1024, 1024))
+    low_code, low_out = invoke("db", "backup", "--db-path", str(db), "--dest", str(backups), "--keep", "2")
+    assert low_code == 1
+    assert "insufficient free disk space" in low_out
+    sync_code, sync_out = invoke("sync", "latest", "--db-path", str(db))
+    assert sync_code == 1
+    assert "insufficient free disk space" in sync_out
+
+
 def test_sync_latest_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     install_client(monkeypatch, FakeClient([3, 2, 1]))
     code, output = invoke("sync", "latest", "--db-path", str(tmp_path / "db.sqlite3"), "--stable-pages", "1")

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 SQLITE_TRIGRAM_MIN_VERSION = (3, 34, 0)
 SQLITE_CONTENTLESS_DELETE_MIN_VERSION = (3, 43, 0)
 WAL_JOURNAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024
+_GIB = 1024 * 1024 * 1024
+_MIB = 1024 * 1024
 
 
 class StorageError(RuntimeError):
@@ -23,6 +26,42 @@ def trigram_supported() -> bool:
 
 def contentless_delete_supported() -> bool:
     return sqlite3.sqlite_version_info >= SQLITE_CONTENTLESS_DELETE_MIN_VERSION
+
+
+def _detected_memory_limit_bytes(cgroup_max_path: Path = Path("/sys/fs/cgroup/memory.max")) -> int | None:
+    candidates: list[int] = []
+    with suppress(OSError, ValueError):
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        if pages > 0 and page_size > 0:
+            candidates.append(pages * page_size)
+    with suppress(OSError, ValueError):
+        raw = cgroup_max_path.read_text(encoding="utf-8").strip()
+        if raw.isdecimal():
+            limit = int(raw)
+            if limit > 0:
+                candidates.append(limit)
+    return min(candidates) if candidates else None
+
+
+def default_mmap_bytes(
+    *,
+    env_override: str | None = None,
+    cgroup_max_path: Path = Path("/sys/fs/cgroup/memory.max"),
+) -> int:
+    """Scale SQLite's ``mmap_size`` to available RAM so small cgroups do not thrash."""
+
+    raw_override = os.environ.get("SEARCH_IWARA_SQLITE_MMAP_BYTES") if env_override is None else env_override
+    if raw_override is not None and raw_override.strip():
+        value = raw_override.strip()
+        if value.isdecimal():
+            return min(int(value), 1024 * _MIB)
+    limit = _detected_memory_limit_bytes(cgroup_max_path)
+    if limit is not None and limit < int(1.5 * _GIB):
+        return 32 * _MIB
+    if limit is not None and limit < 3 * _GIB:
+        return 64 * _MIB
+    return 256 * _MIB
 
 
 def connect(db_path: Path, *, readonly: bool = False) -> sqlite3.Connection:
@@ -40,7 +79,7 @@ def connect(db_path: Path, *, readonly: bool = False) -> sqlite3.Connection:
     # Page cache per connection: 32 MB for the writer, 8 MB for each read-only web thread
     # (the pages themselves are shared through mmap, so small per-thread caches suffice).
     connection.execute(f"PRAGMA cache_size = {-8000 if readonly else -32000}")
-    connection.execute("PRAGMA mmap_size = 268435456")
+    connection.execute(f"PRAGMA mmap_size = {default_mmap_bytes()}")
     if readonly:
         connection.execute("PRAGMA query_only = ON")
     else:

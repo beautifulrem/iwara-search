@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hashlib
 import logging
 from collections.abc import AsyncIterator
@@ -41,6 +43,7 @@ from .formatting import (
 )
 from .metrics import AppMetrics, ObservabilityMiddleware
 from .security import SecurityHeadersMiddleware
+from .watchdog import run_watchdog, sd_notify, watchdog_interval_seconds
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = PACKAGE_ROOT / "static"
@@ -166,9 +169,19 @@ def create_app(settings: Settings | None = None, *, db_path: str | Path | None =
         unregister = app.state.metrics.register_dataset(
             lambda: RankingStore(pool.get()).dataset_status(), sync_interval=settings.expected_sync_interval
         )
+        watchdog_task: asyncio.Task[None] | None = None
+        interval = watchdog_interval_seconds()
+        if interval is not None:
+            watchdog_task = asyncio.create_task(run_watchdog(pool, interval), name="systemd-watchdog")
+        sd_notify("READY=1")
         try:
             yield
         finally:
+            sd_notify("STOPPING=1")
+            if watchdog_task is not None:
+                watchdog_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await watchdog_task
             unregister()
             pool.close()
 

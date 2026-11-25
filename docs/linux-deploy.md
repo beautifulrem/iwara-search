@@ -285,27 +285,37 @@ incoming webhooks (which read the `text` field).
 
 ## Backup and restore
 
-`search-iwara-backup.timer` runs `search-iwara db backup` daily (04:00 plus up
-to 30 min random delay, catch-up after downtime). It uses SQLite's online
-backup API, so it is consistent while the web service and syncs keep running,
-and keeps the newest `SEARCH_IWARA_BACKUP_KEEP` files.
+`search-iwara-backup.timer` runs `search-iwara db backup --compress` daily
+(04:00 plus up to 30 min random delay, catch-up after downtime). It uses
+SQLite's online backup API, verifies `PRAGMA quick_check`, compresses the
+snapshot to `.sqlite3.gz` (unless `SEARCH_IWARA_BACKUP_COMPRESS=false`),
+checks free disk headroom before writing, and keeps the newest
+`SEARCH_IWARA_BACKUP_KEEP` files.
 
 ```bash
-sudo ./deploy/linux/manage.py backup          # back up now
-ls -l /opt/search-iwara/data/backups
+sudo ./deploy/linux/manage.py backup          # back up now (.sqlite3.gz)
+ls -lh /opt/search-iwara/data/backups
 ```
 
-Restore:
+Restore (for `.sqlite3.gz`; omit `gunzip -c` for uncompressed `.sqlite3`):
 
 ```bash
 sudo systemctl stop search-iwara-web.service search-iwara-sync.timer
-sudo install -o searchiwara -g searchiwara -m 0640 \
-  /opt/search-iwara/data/backups/<file>.sqlite3 /opt/search-iwara/data/oreno3d.sqlite3
+sudo sh -c 'gunzip -c /opt/search-iwara/data/backups/<file>.sqlite3.gz > /opt/search-iwara/data/oreno3d.sqlite3'
+sudo chown searchiwara:searchiwara /opt/search-iwara/data/oreno3d.sqlite3
+sudo chmod 0640 /opt/search-iwara/data/oreno3d.sqlite3
 sudo rm -f /opt/search-iwara/data/oreno3d.sqlite3-wal /opt/search-iwara/data/oreno3d.sqlite3-shm
 sudo systemctl start search-iwara-web.service search-iwara-sync.timer
 ```
 
 Copy backups off the host as well (e.g. `rsync`/`restic` the backup dir).
+
+> **Low-RAM VPS note (`<= 1 GiB` RAM):** `search-iwara-web.service` enables
+> `WatchdogSec=90s` + `OOMPolicy=kill`, and SQLite automatically scales
+> `mmap_size` down to `32 MiB` on `< 1.5 GiB` cgroups/hosts. If you add a
+> custom systemd memory drop-in, set `MemoryMax=` **without** `MemoryHigh=`
+> (combining `MemoryHigh` with an exhausted `MemorySwapMax` causes Linux cgroup
+> v2 synchronous reclaim throttling instead of a clean OOM restart).
 
 ## Upgrading
 

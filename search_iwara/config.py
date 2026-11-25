@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     )
     backup_dir: Path | None = None
     backup_keep: PositiveInt = 7
+    backup_compress: bool = False
 
     # --- web -----------------------------------------------------------------------------
     host: str = "127.0.0.1"

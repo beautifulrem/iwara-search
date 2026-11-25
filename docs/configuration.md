@@ -11,7 +11,9 @@ Empty values are treated as "unset".
 |---|---|---|---|
 | `SEARCH_IWARA_DB` | `data/oreno3d.sqlite3` in a source checkout; otherwise the per-user data dir (`~/.local/share/search-iwara/` on Linux, `~/Library/Application Support/search-iwara/` on macOS, `%LOCALAPPDATA%\search-iwara\` on Windows) | `--db-path` | SQLite database file |
 | `SEARCH_IWARA_BACKUP_DIR` | `<db dir>/backups` | `db backup --dest` | Where `db backup` writes |
-| `SEARCH_IWARA_BACKUP_KEEP` | `7` | `db backup --keep` | Backups kept after rotation |
+| `SEARCH_IWARA_BACKUP_KEEP` | `7` | `db backup --keep` | Backups kept after rotation (rotates `.sqlite3` and `.sqlite3.gz` together) |
+| `SEARCH_IWARA_BACKUP_COMPRESS` | `false` (`true` in systemd/Docker backup loops) | `db backup --compress/--no-compress` | Gzip-compress backups to `.sqlite3.gz` (~3–4× smaller) |
+| `SEARCH_IWARA_SQLITE_MMAP_BYTES` | auto (`32 MiB` `<1.5 GiB` RAM, `64 MiB` `<3 GiB`, `256 MiB` `>=3 GiB`) | — | Override SQLite `PRAGMA mmap_size` in bytes (`0` disables `mmap`) |
 
 ## Web
 
@@ -81,7 +83,7 @@ then treats the whole site as disallowed and stops.
 | Command | Description |
 |---|---|
 | `search-iwara db migrate` | Apply ordered schema migrations up to `SCHEMA_VERSION` (`5`) |
-| `search-iwara db backup [--dest DIR] [--keep N]` | Online SQLite backup + `PRAGMA quick_check` + rotation |
+| `search-iwara db backup [--dest DIR] [--keep N] [--compress]` | Online SQLite backup + `PRAGMA quick_check` + disk-headroom check + rotation |
 | `search-iwara db refresh` | Recompute `entity_stats` read models, JST `hot_score` and FTS compaction |
 | `search-iwara db reindex [--verify]` | Stream-rebuild FTS5 indexes in 5 000-row batches, or `--verify` parity with `active` movies (exit `1` on mismatch) |
 | `search-iwara db suppress <id...> [--reason TEXT]` | Hide `source_site_id`(s) from all pages, APIs, rankings and sitemaps (`status='suppressed'`, preserved across syncs) |

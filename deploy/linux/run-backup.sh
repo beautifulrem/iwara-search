@@ -6,6 +6,10 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 require_app_bin
 
 args=(db backup)
+case "${SEARCH_IWARA_BACKUP_COMPRESS:-true}" in
+  0|false|FALSE|no|NO|off|OFF) args+=(--no-compress) ;;
+  *) args+=(--compress) ;;
+esac
 if [[ -n "${SEARCH_IWARA_BACKUP_DIR:-}" ]]; then
   args+=(--dest "${SEARCH_IWARA_BACKUP_DIR}")
 fi

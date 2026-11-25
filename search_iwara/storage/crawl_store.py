@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Self
@@ -57,6 +57,9 @@ class CrawlStore:
         return cls(connection)
 
     def close(self) -> None:
+        if not self.conn.in_transaction:
+            with suppress(sqlite3.Error):
+                self.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
         self.conn.close()
 
     @contextmanager

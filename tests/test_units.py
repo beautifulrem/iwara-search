@@ -433,3 +433,76 @@ def test_linkify_comment_safety_and_punctuation() -> None:
     assert 'href="https://localhost' not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert str(linkify_comment(None)) == ""
+
+
+def test_default_mmap_bytes_scales_with_cgroup_and_env(tmp_path: Path) -> None:
+    from search_iwara.storage.connection import default_mmap_bytes
+
+    cg_512m = tmp_path / "mem_512m"
+    cg_512m.write_text(str(512 * 1024 * 1024), encoding="utf-8")
+    assert default_mmap_bytes(env_override="", cgroup_max_path=cg_512m) == 32 * 1024 * 1024
+
+    cg_2g = tmp_path / "mem_2g"
+    cg_2g.write_text(str(2 * 1024 * 1024 * 1024), encoding="utf-8")
+    assert default_mmap_bytes(env_override="", cgroup_max_path=cg_2g) == 64 * 1024 * 1024
+
+    cg_max = tmp_path / "mem_max"
+    cg_max.write_text("max\n", encoding="utf-8")
+    assert default_mmap_bytes(env_override="0", cgroup_max_path=cg_max) == 0
+    assert default_mmap_bytes(env_override=str(16 * 1024 * 1024), cgroup_max_path=cg_max) == 16 * 1024 * 1024
+
+
+def test_systemd_watchdog_socket_and_lifespan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+    import socket
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from search_iwara.config import get_settings
+    from search_iwara.web import create_app
+    from search_iwara.web.watchdog import sd_notify, watchdog_interval_seconds
+
+    assert watchdog_interval_seconds(env={}) is None
+    assert watchdog_interval_seconds(env={"NOTIFY_SOCKET": "/tmp/s", "WATCHDOG_USEC": "bad"}) is None
+    assert (
+        watchdog_interval_seconds(
+            env={"NOTIFY_SOCKET": "/tmp/s", "WATCHDOG_USEC": "3000000", "WATCHDOG_PID": "99999999"},
+            pid=1234,
+        )
+        is None
+    )
+    assert (
+        watchdog_interval_seconds(
+            env={"NOTIFY_SOCKET": "/tmp/s", "WATCHDOG_USEC": "3000000", "WATCHDOG_PID": "1234"},
+            pid=1234,
+        )
+        == 1.0
+    )
+    assert sd_notify("READY=1", env={"NOTIFY_SOCKET": str(tmp_path / "missing.sock")}) is False
+
+    # Use short socket path under /tmp so AF_UNIX path length limit (108 bytes) is never exceeded.
+    sock_path = f"/tmp/iwara-wd-{os.getpid()}-{time.time_ns()}.sock"
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    server.bind(sock_path)
+    server.settimeout(1.0)
+    try:
+        monkeypatch.setenv("NOTIFY_SOCKET", sock_path)
+        monkeypatch.setenv("WATCHDOG_USEC", "150000")  # 150ms -> 50ms interval
+        monkeypatch.delenv("WATCHDOG_PID", raising=False)
+        db = tmp_path / "wd.sqlite3"
+        with TestClient(create_app(get_settings(db_path=db))) as client:
+            assert client.get("/healthz").status_code == 200
+            time.sleep(0.12)
+        received: list[str] = []
+        while True:
+            try:
+                received.append(server.recv(256).decode("utf-8"))
+            except TimeoutError:
+                break
+        assert "READY=1" in received
+        assert "WATCHDOG=1" in received
+        assert "STOPPING=1" in received
+    finally:
+        server.close()
+        Path(sock_path).unlink(missing_ok=True)

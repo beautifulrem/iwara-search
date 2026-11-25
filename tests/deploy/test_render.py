@@ -56,6 +56,9 @@ def test_web_unit_migrates_before_start(paths: Paths):
     web = render.render_units(make_config(), paths)["search-iwara-web.service"]
     assert "ExecStartPre=/opt/search-iwara/.venv/bin/search-iwara db migrate" in web
     assert f"EnvironmentFile={paths.env_file}" in web
+    assert "NotifyAccess=main" in web
+    assert "WatchdogSec=90s" in web
+    assert "OOMPolicy=kill" in web
     assert "Restart=on-failure" in web
 
 

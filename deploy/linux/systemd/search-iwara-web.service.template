@@ -17,6 +17,9 @@ EnvironmentFile=__ENV_FILE__
 Environment=HOME=__DATA_DIR__
 ExecStartPre=__APP_DIR__/.venv/bin/search-iwara db migrate
 ExecStart=/usr/bin/env bash __APP_DIR__/deploy/linux/run-web.sh
+NotifyAccess=main
+WatchdogSec=90s
+OOMPolicy=kill
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20

@@ -301,8 +301,11 @@ def apply_install(config: DeployConfig, paths: Paths) -> None:
     check_service_access(config)
     write_env_file(paths.env_file, config)
     write_units(config, paths)
-    migrate_database(config)
     shell.run(["systemctl", "daemon-reload"])
+    active, _ = shell.systemctl_state(WEB_UNIT)
+    if active in {"active", "activating", "reloading"}:
+        shell.run(["systemctl", "stop", WEB_UNIT])
+    migrate_database(config)
     shell.run(["systemctl", "enable", WEB_UNIT, *TIMER_UNITS])
     shell.run(["systemctl", "restart", WEB_UNIT])
     shell.run(["systemctl", "restart", *TIMER_UNITS])
@@ -334,7 +337,7 @@ def update_deployment(config: DeployConfig, paths: Paths) -> None:
 def backup_now(config: DeployConfig) -> int:
     code = run_service_command(
         config,
-        ["db", "backup", "--dest", config.backup_dir, "--keep", str(config.backup_keep)],
+        ["db", "backup", "--compress", "--dest", config.backup_dir, "--keep", str(config.backup_keep)],
         interactive=True,
     )
     print("Backup finished." if code == 0 else f"Backup failed (exit {code}).")
