@@ -4,6 +4,61 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security & Compliance
+- **Takedown tombstones (`db suppress` / `db unsuppress`)**: Operators can suppress movie ids via
+  `search-iwara db suppress <id...> [--reason TEXT]` (`status='suppressed'`). Suppressed movies are
+  removed from FTS5, `entity_stats`, `/movies/{id}`, `related_movies`, `/api/*` and sitemaps, and
+  remain suppressed if re-listed upstream during `sync latest` / `sync full`.
+- **Crawler SSRF, redirect & body guards**: `Oreno3dClient` disables implicit redirects and manually
+  validates up to 5 redirect hops against `https` + the configured upstream origin and per-hop
+  `robots.txt` rules, while streaming response bodies with strict caps (`2 MiB` for `robots.txt`,
+  `10 MiB` for HTML pages).
+- **Deployment hardening**: Validated `alert_webhook` against private/loopback/link-local SSRF in
+  non-interactive Linux deploy configs; added full security headers (`CSP`, `CORP`, `X-Frame-Options`,
+  `X-Content-Type-Options`) and fingerprinted immutable cache maps to nginx `/static/` locations;
+  added immediate initial sync and `SIGTERM`/`SIGINT` child forwarding to Docker loop scripts.
+
+### Storage & Performance
+- **Schema v5 compact FTS5 (`contentless_delete=1`)**: Converted `movie_search` and
+  `movie_search_short` (`detail=none`) to contentless-delete FTS5 tables indexing only `active`
+  movies and rebuilt via streamed `fetchmany(5_000)` batches. On a 200k-movie database, peak
+  migration RSS dropped **4.5×** (`2,705 MB` → `597 MB`), database size shrank **29.3 %**
+  (`327.4 MB` → `231.4 MB`), and online backups ran **2.0×** faster.
+- **Query-plan & concurrency wins**:
+  - `tag_all` now seeds from the rarest tag via `entity_stats` and probes remaining tags via PK
+    `EXISTS` (`261.3 ms` → `90.3 ms` P50; 16-thread concurrent read throughput `+68.9 %`).
+  - `related_movies` uses `MATERIALIZED` CTEs + `CROSS JOIN` (`41.1 ms` → `8.9 ms` P50), works even
+    when the viewed movie is `missing`, and batches card tags.
+  - Added `idx_movies_author_top` (`GET /authors` P95 `-36.8 %`), ACID `app_meta['active_movies']`
+    status triggers (`dataset_status` `518×` faster), `PRAGMA journal_size_limit = 64 MiB`, bounded
+    FTS `merge(64)` maintenance, and deferred `fts_dirty` rebuilds when mega-entities (> 500 movies)
+    are renamed.
+- **Correctness**: Fixed JST (`+9 hours`) vs UTC 9-hour skew in `hot_score` and stale-detail
+  windows; normalized entity lookups with Unicode NFKC; maintained FTS5 consistency across entity
+  renames and `missing`/`suppressed` transitions; added `search-iwara db reindex [--verify]` and a
+  200-example Hypothesis Search Oracle property test.
+
+### Web & HTTP Semantics
+- Fixed `GET /?lang=...` + `If-None-Match` (`304`) dropping the `Set-Cookie: ui_lang` header.
+- Canonical `303` query redirects and inverted-range auto-swaps now execute before `ETag` checks.
+- Added `HEAD` support across `/healthz`, `/readyz`, `/metrics`, `/robots.txt` and `/api/{kind}`;
+  `/readyz` cleanly catches `StorageError` and returns `503`.
+
+### UI & Accessibility
+- **Dynamic result-scoped Facet Workbench**: Sidebar facets on `/` recompute live counts against the
+  active search/filter result set (exact up to 2 000 matches, bounded 2 000-row sample above, while
+  preserving sibling union candidates on `ANY` dimensions) and preserve existing query parameters on
+  click.
+- **Searchable, multi-sort directories**: `/characters`, `/authors`, `/tags` and `/categories`
+  support `?q=` filtering and 5 sort modes (`hot`, `popularity`, `count`, `favorites`, `views`),
+  with progressive `<details>` work-sample disclosure on `/authors`.
+- **Filter & mobile ergonomics**: Live badge updates across all 5 filter `<details>` groups,
+  viewport-aware `.is-dropup` combobox popups, visible mobile brand identity, on-screen mobile
+  `Clear all filters`, `≥ 16 px` coarse-pointer inputs, un-clipped `60fps` badges, pending-detail
+  status notice, and safe `https://` linkification in author notes with screen-reader hints.
+
 ## [0.2.2] — 2026-10-01
 
 ### Fixed

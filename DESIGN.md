@@ -204,17 +204,20 @@ Architectural nested-radius scale replacing generic full-pill (`999px`) controls
 - **Variants:** Primary (`--accent` fill, `--on-accent` ink), Secondary (`--surface` fill, `1px solid var(--border-strong)`), Ghost (transparent, hover `--surface-2`).
 
 ### Boolean Query Chips & Facet Workbench Rows
-- **Query Chips (`.filter-chip`):** `6px` radius, `28px` min-height (`36px` coarse), leading monospace operator tag (`ALL` teal, `ANY` ruby, `NOT` vermilion with strikethrough value, or range symbol `≥`/`≤`), value label, and `×` removal affordance.
-- **Facet Workbench Rows (`.facet-row`):** `32px` min-height (`44px` coarse) with clickable solo-pivot name, right-aligned `tabular-nums` corpus count, and paired `+` (`≥ 24×24px`) / `−` (`≥ 24×24px`) toggle links separated by `4px` gap.
+- **Query Chips (`.filter-chip`):** `6px` radius, `28px` min-height (`44px` coarse), leading monospace operator tag (`ALL` teal, `ANY` ruby, `NOT` vermilion with strikethrough value, or range symbol `≥`/`≤`), value label, optional `Unmatched` warning badge on unresolved `q_*` phrases, and `×` removal affordance. On mobile (`≤ 39.99rem`), chips scroll horizontally on the left while `Clear all filters` stays pinned on-screen on the right.
+- **Facet Workbench Rows (`.wb-row`):** `30px` min-height (`44px` coarse), unclipped in document flow without nested sidebar scrollbars. Unfiltered `/` shows cached full-corpus Top-5 entities; filtered/queried `/` computes live result-scoped counts (`SearchStore.facet_counts`, sampled up to `1,000` matches). Clicking either the row label or `+` toggles inclusion/requirement while preserving active query/filters/sort; `−` toggles exclusion.
 
 ### Media Contact Cards (`.card`)
-- **Structure:** `10px` outer radius, `1px solid var(--border)`, `8px` frame padding around a `6px`-radius `16:9` `.media-frame` thumbnail, high-contrast translucent bottom-right view/like badges (`oklch(10% 0.008 265 / 0.78)`), 2-line balanced/clamped title, single-line block-truncated author + tabular relative time, and 1-line block-truncated tags with `+N` overflow count.
+- **Structure:** `10px` outer radius, `1px solid var(--border)`, `8px` frame padding around a `6px`-radius `16:9` `.media-frame` thumbnail, high-contrast translucent bottom-right view/like badges (`oklch(10% 0.008 265 / 0.78)`), 2-line balanced/clamped title, single-line block-truncated author + tabular relative time, and 1-line `.tag__text` truncated tags (`≥ 10ch` on mobile so `60fps` never clips) with `+N` overflow count.
 
 ### Comboboxes & Filter Sheet (`dialog#filters`)
-- **Behavior:** Native `<dialog>` anchored to right edge on desktop (no backdrop blur) and bottom sheet on mobile; opens with Quick Range Presets + compact `ALL`/`ANY` keyword match mode + expandable WAI-ARIA 1.2 entity comboboxes (`?counts=1` corpus counts in suggestions) + server-side `q_*` fallback resolution for No-JS and unconfirmed text submissions.
+- **Behavior:** Native `<dialog>` anchored to right edge on desktop (no backdrop blur) and bottom sheet on mobile; opens with Quick Range Presets + compact `ALL`/`ANY` keyword match mode + 5 `<details class="fgroup">` sections (`Authors`, `Characters`, `Origins`, `Tags`, `Date & popularity`), all with live-updating `<summary>` count badges (`[data-fgroup-badge]`) + WAI-ARIA 1.2 entity comboboxes (`?counts=1`) + server-side `q_*` fallback resolution.
+
+### Rankings Directory (`entity_index.html`)
+- **Behavior:** Constrained `68rem` reading/scanning measure eliminating wide-screen table gaps; desktop header `.site-nav` exposes `Search` + the 4 primary directories (`Characters`, `Authors`, `Tags`, `Origins`) while hiding redundant `.dir-tabs` on `≥ 64rem`; includes in-page SSR name filter (`?q=`) and 5-metric sort switcher (`popularity`, `hot`, `movies`, `favorites`, `views`). On `/authors`, Top-3 authors expand their works rail by default while `#4+` use progressive `<details class="author-works">` disclosure.
 
 ### Detail Metadata & Archival Notice
-- **Active vs Missing:** Inline tabular telemetry strip (`浏览 · 点赞 · 发布于 · 同步于`), hairline taxonomy table with solo-pivot + `+`/`−` actions, and zero centered fake play buttons. When `status='missing'`, renders an archival slate and secondary source links instead of a primary Watch CTA.
+- **Active, Pending & Missing:** Inline tabular telemetry strip (`浏览 · 点赞 · 发布于 · 同步于`), compact 2-column taxonomy rows with solo-pivot + `+`/`−` actions (and borderless plain text for `.tax-chip.is-static`), safe `https://` linkification in creator comments, and zero centered fake play buttons. Unfetched listing-only records show `Metadata pending`; `status='missing'` records show an archival slate, secondary source links, and watchable `active` related videos.
 
 ## Do's and Don'ts
 

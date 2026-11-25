@@ -79,3 +79,30 @@ tokenizer) 3+ character tokens use a slower `LIKE` scan — upgrade SQLite/Pytho
 
 The database was migrated by a newer or older build. Run `search-iwara db migrate` with the
 current build (it refuses to downgrade a newer schema).
+
+### Hiding or restoring specific videos (takedowns / compliance)
+
+To remove one or more videos from search results, detail pages, autocomplete, rankings and sitemaps
+without losing a tombstone when future crawls see the listing again:
+
+```bash
+uv run search-iwara db suppress 123456 --reason "rightsholder request"
+# Restore if needed:
+uv run search-iwara db unsuppress 123456
+```
+
+### Verifying or rebuilding full-text search indexes
+
+To check that `movie_search` and `movie_search_short` match the set of `active` movies (and have no
+pending deferred `fts_dirty` work), or to rebuild them cleanly in 5 000-row streaming batches:
+
+```bash
+uv run search-iwara db reindex --verify
+uv run search-iwara db reindex
+```
+
+### Crawler logs "Redirect target … disallowed" or "Response body exceeded …"
+
+`Oreno3dClient` blocks redirects that leave the configured `https` origin, violate `robots.txt` on
+any hop, or exceed 5 hops, and aborts responses larger than `2 MiB` (`robots.txt`) or `10 MiB`
+(HTML). Persistent errors usually indicate an intercepting captive portal or misconfigured proxy.

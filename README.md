@@ -39,16 +39,16 @@ filters, ranges and rankings the original site doesn't offer. Self-hosted, a sin
 ## Highlights
 
 - 🔎 **One box searches everything** — titles *and* author, character, origin and tag names, with
-  substring matching for Latin and CJK text; every query is answered from an index (FTS5 trigram + CJK n-grams).
+  substring matching for Latin and CJK text; every query is answered from compact `contentless_delete` FTS5 indexes (trigram + CJK n-grams).
 - 🧩 **Real filtering** — include/exclude authors, origins and characters; tags with *all / any / not*;
-  date, view and like ranges; every active filter is a removable chip.
-- 📈 **Eight sort orders & rankings** — trending, popular, most liked, newest (plus views and ascending
-  variants), weighted related videos, and leaderboards for characters, authors, tags and origins.
+  date, view and like ranges; live result-scoped facet counts; every active filter is a removable chip.
+- 📈 **Eight sort orders & searchable directories** — trending, popular, most liked, newest (plus views and ascending
+  variants), weighted related videos, and searchable, multi-sort leaderboards for characters, authors, tags and origins.
 - ✨ **A modern, accessible UI** — light/dark/system themes, keyboard-driven autocomplete, mobile
-  bottom sheets, works without JavaScript, 中文 / 日本語 / English. Checked with axe in three browsers.
-- 🤝 **A polite crawler** — robots.txt (RFC 9309), adaptive rate limiting, jittered retries that honour
+  bottom sheets, works without JavaScript, 中文 / 日本語 / English. Checked with axe against WCAG 2.2 AA.
+- 🤝 **A polite, bounded crawler** — robots.txt (RFC 9309) on every redirect hop, strict origin allow-listing, streaming response-size caps, adaptive rate limiting, jittered retries that honour
   `Retry-After`, proxy support, resumable full crawls and loud failure when the site's markup changes.
-- 🛠️ **Built to run unattended** — versioned migrations, online backups, JSON logs, health checks,
+- 🛠️ **Built to run unattended** — versioned migrations, online backups, compliance takedown tombstones (`db suppress`), JSON logs, health checks,
   Prometheus metrics with alert rules, hardened systemd units and a Docker image.
 
 <table>
@@ -105,6 +105,9 @@ and run it again to continue where it stopped.
 | `search-iwara db migrate` | Create / upgrade the schema (idempotent) |
 | `search-iwara db backup [--dest DIR] [--keep N]` | Consistent online backup with rotation |
 | `search-iwara db refresh` | Recompute rankings and trending scores |
+| `search-iwara db reindex [--verify]` | Stream-rebuild FTS5 indexes (or verify active-movie parity) |
+| `search-iwara db suppress <id...> [--reason TEXT]` | Hide videos from search, rankings, APIs and sitemaps (persists across syncs) |
+| `search-iwara db unsuppress <id...>` | Restore suppressed videos to active search and rankings |
 | `search-iwara serve [--host] [--port] [--reload]` | Start the web UI |
 
 Both sync commands accept `--request-concurrency` and `--request-rate`. Exit codes: `0` ok,
@@ -116,7 +119,7 @@ Both sync commands accept `--request-concurrency` and `--request-rate`. Exit cod
 <details>
 <summary><b>Search parameters & examples</b></summary>
 
-Every filter is a query parameter on `/`, so any search is a shareable URL.
+Every filter is a query parameter on `/`, so any search is a shareable URL. Entity directories (`/characters`, `/authors`, `/tags`, `/categories`) also accept `?q=` (name filter) and `?sort=hot|popularity|count|favorites|views`.
 
 | Group | Parameters |
 |---|---|
@@ -135,6 +138,7 @@ Id lists are comma-separated source ids (≤ 20 per parameter).
 /?origin_any=276&character_any=1470         an origin and a character
 /?tag_any=2,3&tag_not=84                    either tag, but never tag 84
 /?min_views=1000&min_favorites=100&sort=popularity
+/authors?q=studio&sort=popularity           search & sort the author directory
 ```
 
 </details>
@@ -207,8 +211,8 @@ search_iwara/
   i18n.py, locales/    Translations (zh-Hans, ja, en) and language negotiation
 tests/                 Unit, property, integration, snapshot, performance and browser tests
 deploy/                systemd, nginx, deployment manager, Docker helpers, Prometheus rules
-scripts/               Regenerate the logo/icons and the README screenshots
-docs/                  Architecture, configuration, deployment, accessibility, troubleshooting
+scripts/               Logo/icon generator, work-safe screenshot generator, 200k benchmark harness
+docs/                  Architecture, ADRs, configuration, deployment, accessibility, benchmarks, troubleshooting
 ```
 
 </details>

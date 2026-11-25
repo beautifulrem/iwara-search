@@ -76,5 +76,20 @@ Empty values are treated as "unset".
 `1` is also returned when robots.txt is unreachable (5xx/429/network): per RFC 9309 the crawler
 then treats the whole site as disallowed and stops.
 
+## Database maintenance & compliance CLI
+
+| Command | Description |
+|---|---|
+| `search-iwara db migrate` | Apply ordered schema migrations up to `SCHEMA_VERSION` (`5`) |
+| `search-iwara db backup [--dest DIR] [--keep N]` | Online SQLite backup + `PRAGMA quick_check` + rotation |
+| `search-iwara db refresh` | Recompute `entity_stats` read models, JST `hot_score` and FTS compaction |
+| `search-iwara db reindex [--verify]` | Stream-rebuild FTS5 indexes in 5 000-row batches, or `--verify` parity with `active` movies (exit `1` on mismatch) |
+| `search-iwara db suppress <id...> [--reason TEXT]` | Hide `source_site_id`(s) from all pages, APIs, rankings and sitemaps (`status='suppressed'`, preserved across syncs) |
+| `search-iwara db unsuppress <id...>` | Restore suppressed `source_site_id`(s) back to `status='active'` and reindex |
+
+Built-in crawler network bounds (enforced regardless of env settings): redirects are capped at 5
+validated hops within the configured `https` origin with `robots.txt` checked on every hop, and
+streaming response reads stop at `2 MiB` (`robots.txt`) and `10 MiB` (HTML pages).
+
 See [linux-deploy.md](linux-deploy.md) for the systemd/nginx/Docker variables
 (`SEARCH_IWARA_SYNC_HOURS`, `SEARCH_IWARA_ALERT_WEBHOOK`, …) used by the deployment tooling.

@@ -38,12 +38,12 @@
 
 ## 亮点
 
-- 🔎 **一个搜索框搜全部**：同时匹配标题与作者、角色、原作、标签名；拉丁文和中日文都支持子串匹配，所有查询都走索引（FTS5 trigram + CJK n-gram）。
-- 🧩 **真正的筛选**：作者 / 原作 / 角色的包含与排除，标签的全含 / 任一 / 排除，发布日期、播放数、点赞数区间；每个生效条件都是可单独移除的 chip。
-- 📈 **八种排序与排行榜**：飙升、热门、高赞、最新（以及按播放数和各升序），加权的相关视频，角色 / 作者 / 标签 / 原作排行榜。
-- ✨ **现代、无障碍的界面**：浅色 / 深色 / 跟随系统主题，键盘可操作的自动补全，移动端底部面板，禁用 JavaScript 也能用，中文 / 日本語 / English；在三种浏览器上用 axe 自动检查。
-- 🤝 **礼貌的爬虫**：遵守 robots.txt（RFC 9309），自适应限速，带抖动并遵守 `Retry-After` 的重试，支持代理，全量抓取可续抓，站点改版时明确报错停止。
-- 🛠️ **为无人值守而生**：版本化迁移、在线备份、JSON 日志、健康检查、Prometheus 指标与告警规则、加固的 systemd 单元、Docker 镜像。
+- 🔎 **一个搜索框搜全部**：同时匹配标题与作者、角色、原作、标签名；拉丁文和中日文都支持子串匹配，所有查询都走紧凑型 `contentless_delete` FTS5 索引（trigram + CJK n-gram）。
+- 🧩 **真正的筛选**：作者 / 原作 / 角色的包含与排除，标签的全含 / 任一 / 排除，发布日期、播放数、点赞数区间，以及跟随当前结果集实时联动的分面计数；每个生效条件都是可单独移除的 chip。
+- 📈 **八种排序与可检索目录**：飙升、热门、高赞、最新（以及按播放数和各升序），加权的相关视频，以及支持搜索与多维排序的角色 / 作者 / 标签 / 原作排行榜。
+- ✨ **现代、无障碍的界面**：浅色 / 深色 / 跟随系统主题，键盘可操作的自动补全，移动端底部面板，禁用 JavaScript 也能用，中文 / 日本語 / English；通过 axe WCAG 2.2 AA 自动检查。
+- 🤝 **礼貌、有界的爬虫**：每一跳重定向均遵守 robots.txt（RFC 9309）与源站域名白名单，流式限制响应体大小，自适应限速，带抖动并遵守 `Retry-After` 的重试，支持代理，全量抓取可续抓，站点改版时明确报错停止。
+- 🛠️ **为无人值守而生**：版本化迁移、在线备份、持久化下架墓碑（`db suppress`）、JSON 日志、健康检查、Prometheus 指标与告警规则、加固的 systemd 单元、Docker 镜像。
 
 <table>
   <tr>
@@ -96,6 +96,9 @@ docker compose up -d                            # → http://127.0.0.1:8000
 | `search-iwara db migrate` | 创建或升级数据库结构（幂等） |
 | `search-iwara db backup [--dest DIR] [--keep N]` | 一致性在线备份并轮转 |
 | `search-iwara db refresh` | 重算排行与飙升分 |
+| `search-iwara db reindex [--verify]` | 流式重建 FTS5 搜索索引（或校验在库活跃影片一致性） |
+| `search-iwara db suppress <id...> [--reason TEXT]` | 在搜索、排行、API 与 Sitemap 中隐藏指定影片（跨同步持久保留） |
+| `search-iwara db unsuppress <id...>` | 恢复已隐藏影片并重新纳入索引与排行 |
 | `search-iwara serve [--host] [--port] [--reload]` | 启动 Web 界面 |
 
 两个 sync 命令都支持 `--request-concurrency` 与 `--request-rate`。退出码：`0` 成功；`1` 失败超过容忍度或 robots.txt 不可达；`2` 站点结构变化；`75` 已有同步在运行；`78` 配置无效；`143` 被 SIGTERM 终止（已提交的进度会保留）。
@@ -105,7 +108,7 @@ docker compose up -d                            # → http://127.0.0.1:8000
 <details>
 <summary><b>搜索参数与示例</b></summary>
 
-所有筛选都是 `/` 的查询参数，任何搜索都可以直接分享 URL。
+所有筛选都是 `/` 的查询参数，任何搜索都可以直接分享 URL。实体目录页（`/characters`、`/authors`、`/tags`、`/categories`）同样支持 `?q=`（名称过滤）与 `?sort=hot|popularity|count|favorites|views`。
 
 | 类别 | 参数 |
 |---|---|
@@ -124,6 +127,7 @@ ID 列表为逗号分隔的源站 ID，每个参数最多 20 个。
 /?origin_any=276&character_any=1470         指定原作与角色
 /?tag_any=2,3&tag_not=84                    任一标签，但排除标签 84
 /?min_views=1000&min_favorites=100&sort=popularity
+/authors?q=studio&sort=popularity           搜索并按综合热度排序作者目录
 ```
 
 </details>
@@ -192,8 +196,8 @@ search_iwara/
   i18n.py, locales/    翻译文案（zh-Hans、ja、en）与语言协商
 tests/                 单元、属性、集成、页面快照、性能与浏览器测试
 deploy/                systemd、nginx、部署管理器、Docker 辅助脚本、Prometheus 规则
-scripts/               重新生成图标与 README 截图
-docs/                  架构、配置、部署、可访问性、故障排查
+scripts/               生成图标、演示截图与 20 万级基准测试脚本
+docs/                  架构、ADR、配置、部署、可访问性、基准报告与故障排查
 ```
 
 </details>

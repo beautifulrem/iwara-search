@@ -7,9 +7,9 @@ automatically on every change, what must be checked by hand, and the limitations
 
 | Check | Where | Scope |
 |---|---|---|
-| axe-core (WCAG 2.0/2.1/2.2 A + AA and best-practice rules) | `tests/e2e/test_ui.py` | 7 pages (search, filtered search, detail, authors, tags, categories, 404) × desktop 1440 px and mobile 390 px × light and dark themes, plus the open filter dialog |
-| Keyboard operation | `tests/e2e/test_ui.py` | Filter dialog opens, traps focus, closes with <kbd>Esc</kbd> and returns focus to its trigger; the autocomplete is operable with arrows/<kbd>Enter</kbd>/<kbd>Esc</kbd> without submitting the form; <kbd>/</kbd> focuses search; the mobile drawer sits above the sticky header |
-| No-JavaScript use | `tests/e2e/test_ui.py` | Search, filters (inline panel), sorting and all links work with scripting disabled |
+| axe-core (WCAG 2.0/2.1/2.2 A + AA and best-practice rules) | `tests/e2e/test_ui.py` | 7 pages (search, filtered search, detail, authors, tags, categories, 404) × desktop 1440 px and mobile 390 px × light and dark themes, plus the open filter dialog and directory search/sort states |
+| Keyboard operation | `tests/e2e/test_ui.py` | Filter dialog opens, traps focus, closes with <kbd>Esc</kbd> and returns focus to its trigger; the autocomplete is operable with arrows/<kbd>Enter</kbd>/<kbd>Esc</kbd> without submitting the form (with drop-up positioning near the viewport bottom); <kbd>/</kbd> focuses search; directory `<details>` disclosures and mobile drawers are keyboard-operable |
+| No-JavaScript use | `tests/e2e/test_ui.py` | Search, filters (inline panel), dynamic facet links, directory search/sort, sorting and all links work with scripting disabled |
 | Colour contrast of every design-token pair | computed from the OKLCH tokens in `static/style.css` | text ≥ 4.5:1, large text and UI boundaries (inputs, buttons, focus ring) ≥ 3:1, in both themes |
 | Content Security Policy compliance | `tests/test_web.py` | no inline script, style or event handlers |
 | Screen-reader semantics of the checklist below | `tests/e2e/test_a11y_semantics.py` | every step's roles, accessible names, states (`aria-expanded`, `aria-selected`, `aria-current`), focus movement and live-region announcements, in the English UI |
@@ -25,15 +25,18 @@ switching) can only be judged by a person running the checklist below.
 * Semantic landmarks (`header`, `nav`, `main`, `aside`, `footer`), one `h1` per page, a
   "skip to main content" link, and `lang`/`hreflang` on language links.
 * Visible `:focus-visible` outline (2 px, ≥ 3:1) that is never hidden by the sticky header
-  (`scroll-padding`), target sizes ≥ 24 × 24 px (44 px on coarse pointers).
+  (`scroll-padding`), target sizes ≥ 24 × 24 px (≥ 44 × 44 px and ≥ 16 px input font size on coarse
+  pointers to prevent involuntary mobile zoom).
 * Filters use native `<dialog>` (focus trap, <kbd>Esc</kbd>, inert background) and
-  `<details>` groups; the autocomplete follows the WAI-ARIA 1.2 combobox pattern
-  (`aria-expanded`, `aria-controls`, `aria-activedescendant`, `listbox`/`option`).
+  `<details>` groups with live active-filter counts; the autocomplete follows the WAI-ARIA 1.2
+  combobox pattern (`aria-expanded`, `aria-controls`, `aria-activedescendant`, `listbox`/`option`).
 * Status messages go through a polite live region: the suggestion count is announced
   once when the list opens or the count changes (debounced 500 ms), not on every keystroke;
   adding/removing a filter and copying the sync command are announced.
 * `aria-current` marks the current page, sort and navigation item; decorative icons are
-  `aria-hidden`; cover links duplicate the title link, so they are removed from the tab order.
+  `aria-hidden`; cover links duplicate the title link, so they are removed from the tab order;
+  external links (including linkified `https://` URLs in author notes) announce "(opens in a new
+  window)" via screen-reader-only text.
 * `prefers-reduced-motion`, `forced-colors` (Windows High Contrast) and print styles are supported;
   every colour token has a fallback for browsers without `light-dark()`.
 
@@ -60,6 +63,7 @@ Run before each release with **NVDA + Firefox** (Windows) and **VoiceOver + Safa
 
 | Date | Check | Result |
 |---|---|---|
+| 2026-11-25 | 52-test Chromium Playwright E2E + axe-core WCAG 2.2 AA, keyboard, coarse-pointer (390×844), No-JS and screen-reader semantics suites | pass, 0 violations |
 | 2026-10-01 | axe (Chromium, Firefox), keyboard, no-JS and screen-reader semantics suites | pass, 0 violations |
 | 2026-10-01 | VoiceOver + Safari 27.0 on macOS 27.0 (26A428), English UI, full manual checklist (steps 1–6) — run by the project owner | pass, no issues found |
 | — | NVDA + Firefox (Windows), VoiceOver + Safari on iOS | not yet performed — record the date, versions and findings here when done |
