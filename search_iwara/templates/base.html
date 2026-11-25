@@ -89,8 +89,9 @@
 
       <div class="site-header__tools">
         <details class="menu" data-menu>
-          <summary class="icon-btn" aria-label="{{ tr('header.language') }}">
-            {{ ui.icon("globe") }}<span class="menu__current" aria-hidden="true">{% for language in languages if language.active %}{{ language.code.split('-')[0]|upper }}{% endfor %}</span>
+          {% set current_lang_short %}{% for language in languages if language.active %}{{ language.code.split('-')[0]|upper }}{% endfor %}{% endset %}
+          <summary class="icon-btn" title="{{ tr('header.language') }}">
+            {{ ui.icon("globe") }}<span class="sr-only">{{ tr('header.language') }}: </span><span class="menu__current">{{ current_lang_short }}</span>
           </summary>
           <ul class="menu__list">
             {% for language in languages %}

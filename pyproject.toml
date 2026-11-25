@@ -52,6 +52,8 @@ filterwarnings = [
   # uvicorn still imports websockets' legacy API (third-party, harmless for us)
   "ignore::DeprecationWarning:websockets.*",
   "ignore::DeprecationWarning:uvicorn.protocols.websockets.*",
+  # pytest-playwright 0.10 defines its session-scoped base_url fixture as a plugin method
+  "ignore:(?s).*'base_url' fixture.*:pytest.PytestRemovedIn10Warning",
 ]
 markers = [
   "slow: large synthetic-dataset performance budgets (deselect with -m 'not slow')",
