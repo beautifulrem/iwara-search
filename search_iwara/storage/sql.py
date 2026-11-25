@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Final
 
 from ..models import EntityKind, SortMode
+
+
+def active_movie_count(conn: sqlite3.Connection) -> int:
+    """O(1) lookup of active movie count maintained by v5 triggers, with COUNT(*) fallback."""
+
+    row = conn.execute("SELECT value FROM app_meta WHERE key = 'active_movies'").fetchone()
+    if row is not None:
+        return int(row[0])
+    return int(conn.execute("SELECT COUNT(*) FROM movies WHERE status = 'active'").fetchone()[0])
+
 
 # (entity table, join table, join column) — identifiers are whitelisted here and nowhere else.
 ENTITY_TABLES: Final[dict[EntityKind, tuple[str, str, str]]] = {
@@ -18,16 +29,29 @@ RELATION_KINDS: Final[tuple[EntityKind, ...]] = ("tags", "origins", "characters"
 POPULARITY_EXPR: Final = "(COALESCE(view_count, 0) + COALESCE(favorite_count, 0) * 50)"
 
 # "Hot" decays popularity by age in hours (HN-style gravity with a 6h grace period).
+# ``published_at`` is stored in naive Asia/Tokyo (UTC+9) wall time, so compare against +9h.
 HOT_SCORE_UPDATE: Final = """
 UPDATE movies
 SET hot_score = popularity / (
-    MAX((julianday('now') - julianday(COALESCE(published_at, '1970-01-01 00:00'))) * 24.0, 0.0) + 6.0
+    MAX(
+        (julianday(datetime('now', '+9 hours')) - julianday(COALESCE(published_at, '1970-01-01 00:00')))
+        * 24.0,
+        0.0
+    ) + 6.0
 )
 WHERE status = 'active'
 """
 # Older movies' hot scores drift negligibly between syncs (score ∝ 1/age), so runs without
-# catalogue changes only refresh the last 30 days.
-HOT_SCORE_UPDATE_RECENT: Final = HOT_SCORE_UPDATE + "  AND published_at >= date('now', '-30 days')\n"
+# catalogue changes only refresh the last 30 days (in Asia/Tokyo date coordinates).
+HOT_SCORE_UPDATE_RECENT: Final = (
+    HOT_SCORE_UPDATE + "  AND published_at >= date('now', '+9 hours', '-30 days')\n"
+)
+
+ACTIVE_MOVIES_REFRESH: Final = """
+INSERT INTO app_meta(key, value)
+VALUES ('active_movies', CAST((SELECT COUNT(*) FROM movies WHERE status = 'active') AS TEXT))
+ON CONFLICT(key) DO UPDATE SET value = excluded.value
+"""
 
 # One searchable document per movie: the title plus every human-facing name attached to it.
 SEARCH_DOCUMENT_SELECT: Final = """

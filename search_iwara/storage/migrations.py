@@ -13,12 +13,57 @@ from collections.abc import Callable
 from ..parsers import SOURCE_HOSTS, VIDEO_HOSTS
 from ..utils import decode_source_escapes, safe_url
 from .connection import trigram_supported
-from .search_index import rebuild_short_index
-from .sql import ENTITY_STATS_REFRESH, HOT_SCORE_UPDATE, SEARCH_DOCUMENT_SELECT
+from .search_index import (
+    STREAM_BATCH_SIZE,
+    movie_search_ddl,
+    movie_search_short_ddl,
+    optimize_indexes,
+    rebuild_all_indexes,
+    rebuild_short_index,
+)
+from .sql import (
+    ACTIVE_MOVIES_REFRESH,
+    ENTITY_STATS_REFRESH,
+    HOT_SCORE_UPDATE,
+    SEARCH_DOCUMENT_SELECT,
+)
 
 logger = logging.getLogger(__name__)
 
 Migration = Callable[[sqlite3.Connection], None]
+
+ACTIVE_MOVIES_TRIGGERS: tuple[str, ...] = (
+    "DROP TRIGGER IF EXISTS trg_movies_active_ai",
+    "DROP TRIGGER IF EXISTS trg_movies_active_ad",
+    "DROP TRIGGER IF EXISTS trg_movies_active_au",
+    """
+    CREATE TRIGGER trg_movies_active_ai AFTER INSERT ON movies
+    WHEN NEW.status = 'active'
+    BEGIN
+        UPDATE app_meta
+        SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)
+        WHERE key = 'active_movies';
+    END
+    """,
+    """
+    CREATE TRIGGER trg_movies_active_ad AFTER DELETE ON movies
+    WHEN OLD.status = 'active'
+    BEGIN
+        UPDATE app_meta
+        SET value = CAST(CAST(value AS INTEGER) - 1 AS TEXT)
+        WHERE key = 'active_movies';
+    END
+    """,
+    """
+    CREATE TRIGGER trg_movies_active_au AFTER UPDATE OF status ON movies
+    WHEN (OLD.status = 'active') != (NEW.status = 'active')
+    BEGIN
+        UPDATE app_meta
+        SET value = CAST(CAST(value AS INTEGER) + CASE WHEN NEW.status = 'active' THEN 1 ELSE -1 END AS TEXT)
+        WHERE key = 'active_movies';
+    END
+    """,
+)
 
 
 def _v1_baseline(conn: sqlite3.Connection) -> None:
@@ -135,14 +180,19 @@ def _v2_search_stats_and_indexes(conn: sqlite3.Connection) -> None:
     ):
         conn.execute(statement)
 
-    # 5. Full-text search over title + author/character/origin/tag names.
+    # 5. Full-text search over title + author/character/origin/tag names (streamed in chunks).
     tokenizer = "trigram" if trigram_supported() else "unicode61"
     if tokenizer != "trigram":
         logger.warning(
             "SQLite < 3.34: trigram tokenizer unavailable, CJK substring search falls back to LIKE"
         )
-    conn.execute(f"CREATE VIRTUAL TABLE movie_search USING fts5(title, keywords, tokenize='{tokenizer}')")
-    conn.execute(f"INSERT INTO movie_search(rowid, title, keywords) {SEARCH_DOCUMENT_SELECT}")
+    conn.execute(movie_search_ddl(tokenizer))
+    cursor = conn.execute(f"{SEARCH_DOCUMENT_SELECT} WHERE m.status = 'active'")
+    while batch := cursor.fetchmany(STREAM_BATCH_SIZE):
+        conn.executemany(
+            "INSERT INTO movie_search(rowid, title, keywords) VALUES (?, ?, ?)",
+            ((int(r[0]), str(r[1]), str(r[2])) for r in batch),
+        )
 
     # 6. Materialised read models and run history.
     conn.execute(
@@ -206,9 +256,7 @@ def _v3_cjk_index_tiebreakers_and_run_stats(conn: sqlite3.Connection) -> None:
         conn.execute(f"ALTER TABLE sync_runs ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE sync_runs ADD COLUMN status_codes TEXT")
     # Short-token index: CJK unigrams/bigrams + words with 1/2-char prefix indexes.
-    conn.execute(
-        "CREATE VIRTUAL TABLE movie_search_short USING fts5(terms, tokenize='unicode61', prefix='1 2')"
-    )
+    conn.execute(movie_search_short_ddl())
     rebuild_short_index(conn)
     # Comments were stored with literal "\n" escapes (as rendered by the source site).
     conn.execute(
@@ -220,28 +268,74 @@ def _v3_cjk_index_tiebreakers_and_run_stats(conn: sqlite3.Connection) -> None:
 def _v4_decode_comment_escapes(conn: sqlite3.Connection) -> None:
     """Comments stored before 0.2 kept the source's backslash escapes (``\\'``, ``\\"``, ``\\n``)."""
 
-    rows = conn.execute(
-        "SELECT id, author_comment FROM movies WHERE instr(author_comment, char(92)) > 0"
-    ).fetchall()
-    conn.executemany(
-        "UPDATE movies SET author_comment = ? WHERE id = ?",
-        [(decode_source_escapes(row["author_comment"]), row["id"]) for row in rows],
+    cursor = conn.execute("SELECT id, author_comment FROM movies WHERE instr(author_comment, char(92)) > 0")
+    while batch := cursor.fetchmany(STREAM_BATCH_SIZE):
+        conn.executemany(
+            "UPDATE movies SET author_comment = ? WHERE id = ?",
+            [(decode_source_escapes(row["author_comment"]), row["id"]) for row in batch],
+        )
+
+
+def _table_sql(conn: sqlite3.Connection, name: str) -> str:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone()
+    return "" if row is None or row[0] is None else str(row[0])
+
+
+def _v5_compact_fts_author_index_and_counts(conn: sqlite3.Connection) -> None:
+    """Upgrade v4 databases to compact active-only FTS5, composite author index and O(1) counts."""
+
+    # 1. Replace single-column author_id index with one that also serves top-N per author in order.
+    conn.execute("DROP INDEX IF EXISTS idx_movies_author_id")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_movies_author_top "
+        "ON movies(author_id, status, popularity DESC, source_site_id DESC)"
     )
+
+    # 2. Rebuild FTS tables if upgrading from v4's uncompacted/unfiltered DDL; otherwise optimize.
+    tokenizer = "trigram" if trigram_supported() else "unicode61"
+    expected_main = movie_search_ddl(tokenizer)
+    expected_short = movie_search_short_ddl()
+    if (
+        _table_sql(conn, "movie_search") != expected_main
+        or _table_sql(conn, "movie_search_short") != expected_short
+    ):
+        rebuild_all_indexes(conn, tokenizer=tokenizer)
+    else:
+        optimize_indexes(conn)
+    conn.execute(
+        "INSERT INTO app_meta(key, value) VALUES ('fts_tokenizer', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (tokenizer,),
+    )
+
+    # 3. Maintain exact active movie count in app_meta via lightweight status triggers.
+    conn.execute(ACTIVE_MOVIES_REFRESH)
+    for trigger_sql in ACTIVE_MOVIES_TRIGGERS:
+        conn.execute(trigger_sql)
+
+    # 4. Recompute JST-aligned hot_score and entity_stats.
+    conn.execute(HOT_SCORE_UPDATE)
+    for statement in ENTITY_STATS_REFRESH:
+        conn.execute(statement)
 
 
 def _sanitise_urls(conn: sqlite3.Connection) -> None:
     """Null out any URL stored by 0.1.x that the parser allow-list would now reject."""
 
-    rows = conn.execute("SELECT id, oreno3d_url, external_video_url, thumbnail_url FROM movies").fetchall()
-    for row in rows:
-        video = safe_url(row["external_video_url"], VIDEO_HOSTS)
-        thumbnail = safe_url(row["thumbnail_url"], SOURCE_HOSTS)
-        source = safe_url(row["oreno3d_url"], SOURCE_HOSTS) or ""
-        stored = (row["external_video_url"], row["thumbnail_url"], row["oreno3d_url"])
-        if (video, thumbnail, source) != stored:
-            conn.execute(
+    cursor = conn.execute("SELECT id, oreno3d_url, external_video_url, thumbnail_url FROM movies")
+    while batch := cursor.fetchmany(STREAM_BATCH_SIZE):
+        updates: list[tuple[str | None, str | None, str, int]] = []
+        for row in batch:
+            video = safe_url(row["external_video_url"], VIDEO_HOSTS)
+            thumbnail = safe_url(row["thumbnail_url"], SOURCE_HOSTS)
+            source = safe_url(row["oreno3d_url"], SOURCE_HOSTS) or ""
+            stored = (row["external_video_url"], row["thumbnail_url"], row["oreno3d_url"])
+            if (video, thumbnail, source) != stored:
+                updates.append((video, thumbnail, source, int(row["id"])))
+        if updates:
+            conn.executemany(
                 "UPDATE movies SET external_video_url = ?, thumbnail_url = ?, oreno3d_url = ? WHERE id = ?",
-                (video, thumbnail, source, row["id"]),
+                updates,
             )
 
 
@@ -250,6 +344,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _v2_search_stats_and_indexes,
     _v3_cjk_index_tiebreakers_and_run_stats,
     _v4_decode_comment_escapes,
+    _v5_compact_fts_author_index_and_counts,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

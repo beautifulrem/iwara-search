@@ -3,37 +3,76 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Final
+from typing import Any, Final
 
-from ..models import DatasetStatus, EntityKind, MovieCard, RankingKind, RankingRow
+from ..models import (
+    DEFAULT_RANKING_SORT,
+    DatasetStatus,
+    EntityKind,
+    MovieCard,
+    RankingKind,
+    RankingRow,
+    RankingSort,
+)
+from ..utils import clean_text, escape_like
 from .mappers import CARD_COLUMNS, load_cards
+from .sql import active_movie_count
 
-RANK_ORDER: Final = "popularity DESC, total_favorites DESC, movie_count DESC, name"
+RANKING_SORT_CLAUSES: Final[dict[RankingSort, str]] = {
+    "popularity": "popularity DESC, total_favorites DESC, movie_count DESC, name",
+    "hot": "hot DESC, popularity DESC, movie_count DESC, name",
+    "movies": "movie_count DESC, popularity DESC, total_favorites DESC, name",
+    "favorites": "total_favorites DESC, popularity DESC, movie_count DESC, name",
+    "views": "total_views DESC, popularity DESC, movie_count DESC, name",
+}
 RANK_COLUMNS: Final = "kind, source_id, name, movie_count, total_views, total_favorites, popularity, hot"
 FACET_KINDS: Final[tuple[EntityKind, ...]] = ("characters", "tags", "authors", "origins")
 
 
-def _kind_filter(kind: RankingKind) -> tuple[str, tuple[str, ...]]:
+def _kind_and_query_filter(kind: RankingKind, q: str = "") -> tuple[str, list[Any]]:
     if kind == "categories":
-        return "kind IN (?, ?)", ("tags", "origins")
-    return "kind = ?", (kind,)
+        clauses = ["kind IN (?, ?)"]
+        params: list[Any] = ["tags", "origins"]
+    else:
+        clauses = ["kind = ?"]
+        params = [kind]
+    cleaned = clean_text(q)
+    if cleaned:
+        clauses.append("name LIKE ? ESCAPE '\\'")
+        params.append(f"%{escape_like(cleaned)}%")
+    return " AND ".join(clauses), params
 
 
 class RankingStore:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.conn = connection
 
-    def count(self, kind: RankingKind) -> int:
-        where, params = _kind_filter(kind)
+    def count(self, kind: RankingKind, *, q: str = "") -> int:
+        where, params = _kind_and_query_filter(kind, q)
         return int(
             self.conn.execute(f"SELECT COUNT(*) FROM entity_stats WHERE {where}", params).fetchone()[0]
         )
 
-    def top(self, kind: RankingKind, *, limit: int, offset: int = 0) -> list[RankingRow]:
-        where, params = _kind_filter(kind)
+    def top(
+        self,
+        kind: RankingKind,
+        *,
+        limit: int,
+        offset: int = 0,
+        q: str = "",
+        sort: RankingSort = DEFAULT_RANKING_SORT,
+    ) -> list[RankingRow]:
+        where, params = _kind_and_query_filter(kind, q)
+        order_sql = RANKING_SORT_CLAUSES[sort]
+        cleaned = clean_text(q)
+        if cleaned:
+            order_sql = f"INSTR(LOWER(name), LOWER(?)) = 1 DESC, {order_sql}"
+            query_params: list[Any] = [*params, cleaned, limit, offset]
+        else:
+            query_params = [*params, limit, offset]
         rows = self.conn.execute(
-            f"SELECT {RANK_COLUMNS} FROM entity_stats WHERE {where} ORDER BY {RANK_ORDER} LIMIT ? OFFSET ?",
-            (*params, limit, offset),
+            f"SELECT {RANK_COLUMNS} FROM entity_stats WHERE {where} ORDER BY {order_sql} LIMIT ? OFFSET ?",
+            query_params,
         ).fetchall()
         return [
             RankingRow(
@@ -49,34 +88,32 @@ class RankingStore:
             for row in rows
         ]
 
-    def sidebar(self, *, limit: int = 12) -> dict[str, list[RankingRow]]:
-        return {
-            "characters": self.top("characters", limit=limit),
-            "authors": self.top("authors", limit=limit),
-            "categories": self.top("categories", limit=limit),
-        }
-
-    def facet_workbench(self, *, limit: int = 6) -> dict[EntityKind, list[RankingRow]]:
+    def facet_workbench(self, *, limit: int = 5) -> dict[EntityKind, list[RankingRow]]:
         return {kind: self.top(kind, limit=limit) for kind in FACET_KINDS}
 
     def top_movies_by_author(
         self, author_ids: list[int], *, per_author: int = 8
     ) -> dict[int, list[MovieCard]]:
+        """Top ``per_author`` active movies per author via bounded seeks on ``idx_movies_author_top``."""
+
         if not author_ids:
             return {}
         placeholders = ", ".join("?" * len(author_ids))
         rows = self.conn.execute(
             f"""
-            SELECT * FROM (
-                SELECT {CARD_COLUMNS},
-                       ROW_NUMBER() OVER (
-                           PARTITION BY a.id ORDER BY m.popularity DESC, m.source_site_id DESC
-                       ) AS rn
-                FROM authors a JOIN movies m ON m.author_id = a.id
-                WHERE a.source_site_id IN ({placeholders}) AND m.status = 'active'
-            ) WHERE rn <= ?
+            SELECT {CARD_COLUMNS}
+            FROM authors a
+            CROSS JOIN movies m ON m.id IN (
+                SELECT m2.id
+                FROM movies m2
+                WHERE m2.author_id = a.id AND m2.status = 'active'
+                ORDER BY m2.popularity DESC, m2.source_site_id DESC
+                LIMIT ?
+            )
+            WHERE a.source_site_id IN ({placeholders})
+            ORDER BY a.id, m.popularity DESC, m.source_site_id DESC
             """,
-            (*author_ids, per_author),
+            (per_author, *author_ids),
         ).fetchall()
         cards = load_cards(self.conn, rows)
         result: dict[int, list[MovieCard]] = {author_id: [] for author_id in author_ids}
@@ -86,9 +123,7 @@ class RankingStore:
         return result
 
     def dataset_status(self) -> DatasetStatus:
-        movie_count = int(
-            self.conn.execute("SELECT COUNT(*) FROM movies WHERE status = 'active'").fetchone()[0]
-        )
+        movie_count = active_movie_count(self.conn)
         last_success = self.conn.execute(
             "SELECT MAX(finished_at) FROM sync_runs WHERE status IN ('success', 'partial')"
         ).fetchone()[0]

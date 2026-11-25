@@ -9,6 +9,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 SQLITE_TRIGRAM_MIN_VERSION = (3, 34, 0)
+SQLITE_CONTENTLESS_DELETE_MIN_VERSION = (3, 43, 0)
+WAL_JOURNAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024
 
 
 class StorageError(RuntimeError):
@@ -17,6 +19,10 @@ class StorageError(RuntimeError):
 
 def trigram_supported() -> bool:
     return sqlite3.sqlite_version_info >= SQLITE_TRIGRAM_MIN_VERSION
+
+
+def contentless_delete_supported() -> bool:
+    return sqlite3.sqlite_version_info >= SQLITE_CONTENTLESS_DELETE_MIN_VERSION
 
 
 def connect(db_path: Path, *, readonly: bool = False) -> sqlite3.Connection:
@@ -40,6 +46,7 @@ def connect(db_path: Path, *, readonly: bool = False) -> sqlite3.Connection:
     else:
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
+        connection.execute(f"PRAGMA journal_size_limit = {WAL_JOURNAL_SIZE_LIMIT_BYTES}")
     return connection
 
 

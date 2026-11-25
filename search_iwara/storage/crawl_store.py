@@ -4,19 +4,27 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Self
+from zoneinfo import ZoneInfo
 
 from ..models import CrawlerStats, EntityKind, EntityRef, ListUpsertResult, MovieDetail, MovieListItem
 from ..utils import ASCII_DIGITS_RE, utc_now
 from .connection import TransactionManager, connect
 from .migrations import migrate
-from .search_index import index_movie
-from .sql import ENTITY_STATS_REFRESH, ENTITY_TABLES, HOT_SCORE_UPDATE, HOT_SCORE_UPDATE_RECENT
+from .search_index import index_movie, optimize_indexes, rebuild_all_indexes, verify_indexes
+from .sql import (
+    ACTIVE_MOVIES_REFRESH,
+    ENTITY_STATS_REFRESH,
+    ENTITY_TABLES,
+    HOT_SCORE_UPDATE,
+    HOT_SCORE_UPDATE_RECENT,
+)
 
+SOURCE_TZ = ZoneInfo("Asia/Tokyo")
 RETRY_BASE = timedelta(minutes=30)
 RUN_COUNTERS = (
     "pages_checked",
@@ -56,22 +64,59 @@ class CrawlStore:
 
     # --- entities & relations ----------------------------------------------------------------
 
-    def _upsert_entity(self, kind: EntityKind, entity: EntityRef) -> int:
-        table = ENTITY_TABLES[kind][0]
-        now = utc_now()
-        row = self.conn.execute(
-            f"""
-            INSERT INTO {table} (source_site_id, name, oreno3d_url, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(source_site_id) DO UPDATE SET
-                name = excluded.name,
-                oreno3d_url = COALESCE(excluded.oreno3d_url, {table}.oreno3d_url),
-                updated_at = excluded.updated_at
-            RETURNING id
-            """,
-            (entity.source_id, entity.name, entity.url, now, now),
+    def _upsert_entity(self, kind: EntityKind, entity: EntityRef, *, skip_movie_id: int | None = None) -> int:
+        table, join_table, column = ENTITY_TABLES[kind]
+        existing = self.conn.execute(
+            f"SELECT id, name, oreno3d_url FROM {table} WHERE source_site_id = ?",
+            (entity.source_id,),
         ).fetchone()
-        return int(row["id"])
+        now = utc_now()
+        if existing is None:
+            inserted = self.conn.execute(
+                f"""
+                INSERT INTO {table} (source_site_id, name, oreno3d_url, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                (entity.source_id, entity.name, entity.url, now, now),
+            ).fetchone()
+            return int(inserted["id"])
+
+        entity_id = int(existing["id"])
+        name_changed = str(existing["name"]) != entity.name
+        url_changed = entity.url is not None and existing["oreno3d_url"] != entity.url
+        if not name_changed and not url_changed:
+            return entity_id
+
+        self.conn.execute(
+            f"""
+            UPDATE {table}
+            SET name = ?, oreno3d_url = COALESCE(?, oreno3d_url), updated_at = ?
+            WHERE id = ?
+            """,
+            (entity.name, entity.url, now, entity_id),
+        )
+        if name_changed:
+            if kind == "authors":
+                linked = self.conn.execute(
+                    "SELECT id FROM movies WHERE author_id = ? AND status = 'active'",
+                    (entity_id,),
+                ).fetchall()
+            else:
+                linked = self.conn.execute(
+                    f"""
+                    SELECT m.id
+                    FROM {join_table} rel
+                    JOIN movies m ON m.id = rel.movie_id
+                    WHERE rel.{column} = ? AND m.status = 'active'
+                    """,
+                    (entity_id,),
+                ).fetchall()
+            for row in linked:
+                mid = int(row["id"])
+                if mid != skip_movie_id:
+                    self._reindex_search(mid)
+        return entity_id
 
     def _replace_relations(self, movie_id: int, kind: EntityKind, entity_ids: list[int]) -> None:
         _, join_table, column = ENTITY_TABLES[kind]
@@ -125,6 +170,13 @@ class CrawlStore:
             return ListUpsertResult(movie_id=movie_id, is_new=True, list_changed=True, needs_detail=True)
 
         movie_id = int(row["id"])
+        if row["status"] == "suppressed":
+            self.conn.execute(
+                "UPDATE movies SET list_seen_at = ? WHERE id = ?",
+                (now, movie_id),
+            )
+            return ListUpsertResult(movie_id=movie_id, is_new=False, list_changed=False, needs_detail=False)
+
         title_changed = row["title"] != item.title or row["author_display_name"] != item.author_name
         list_changed = (
             title_changed
@@ -163,8 +215,18 @@ class CrawlStore:
         )
 
     def apply_movie_detail(self, detail: MovieDetail) -> None:
+        existing = self.conn.execute(
+            "SELECT id, status FROM movies WHERE source_site_id = ?",
+            (detail.source_site_id,),
+        ).fetchone()
+        if existing is not None and existing["status"] == "suppressed":
+            return
+
+        pending_id = None if existing is None else int(existing["id"])
         now = utc_now()
-        author_id = self._upsert_entity("authors", detail.author) if detail.author else None
+        author_id = (
+            self._upsert_entity("authors", detail.author, skip_movie_id=pending_id) if detail.author else None
+        )
         values = (
             detail.oreno3d_url,
             detail.external_video_url,
@@ -212,13 +274,18 @@ class CrawlStore:
             ("characters", detail.characters),
         )
         for kind, entities in relations:
-            ids = [self._upsert_entity(kind, entity) for entity in entities]
+            ids = [self._upsert_entity(kind, entity, skip_movie_id=movie_id) for entity in entities]
             self._replace_relations(movie_id, kind, ids)
         self._reindex_search(movie_id)
 
     def mark_movie_missing(self, source_site_id: int, oreno3d_url: str) -> None:
+        existing = self.conn.execute(
+            "SELECT id, status FROM movies WHERE source_site_id = ?", (source_site_id,)
+        ).fetchone()
+        if existing is not None and existing["status"] == "suppressed":
+            return
         now = utc_now()
-        self.conn.execute(
+        row = self.conn.execute(
             """
             INSERT INTO movies (
                 source_site_id, oreno3d_url, status, detail_fetched_at, created_at, updated_at
@@ -229,9 +296,83 @@ class CrawlStore:
                 status = 'missing',
                 detail_fetched_at = excluded.detail_fetched_at,
                 updated_at = excluded.updated_at
+            RETURNING id
             """,
             (source_site_id, oreno3d_url, now, now, now),
-        )
+        ).fetchone()
+        self._reindex_search(int(row["id"]))
+
+    def suppress_movies(
+        self, source_site_ids: Iterable[int], *, base_url: str = "https://oreno3d.com"
+    ) -> int:
+        """Permanently suppress local entries (rights-holder/operator takedown) across sync runs."""
+
+        ids = list(dict.fromkeys(source_site_ids))
+        if not ids:
+            return 0
+        now = utc_now()
+        root = base_url.rstrip("/")
+        with self.transaction():
+            for sid in ids:
+                row = self.conn.execute(
+                    """
+                    INSERT INTO movies (source_site_id, oreno3d_url, status, created_at, updated_at)
+                    VALUES (?, ?, 'suppressed', ?, ?)
+                    ON CONFLICT(source_site_id) DO UPDATE SET
+                        status = 'suppressed',
+                        updated_at = excluded.updated_at
+                    RETURNING id
+                    """,
+                    (sid, f"{root}/movies/{sid}", now, now),
+                ).fetchone()
+                self._reindex_search(int(row["id"]))
+                self.conn.execute(
+                    "DELETE FROM crawl_errors WHERE entity_type = 'movie' AND entity_id = ?",
+                    (str(sid),),
+                )
+        self.refresh_derived(full=True)
+        return len(ids)
+
+    def unsuppress_movies(self, source_site_ids: Iterable[int]) -> int:
+        """Lift local suppression: restore metadata-bearing rows to active or drop empty stubs."""
+
+        ids = list(dict.fromkeys(source_site_ids))
+        if not ids:
+            return 0
+        now = utc_now()
+        restored = 0
+        with self.transaction():
+            for sid in ids:
+                row = self.conn.execute(
+                    "SELECT id, title, detail_fetched_at FROM movies "
+                    "WHERE source_site_id = ? AND status = 'suppressed'",
+                    (sid,),
+                ).fetchone()
+                if row is None:
+                    continue
+                movie_id = int(row["id"])
+                if not row["title"] and row["detail_fetched_at"] is None:
+                    self.conn.execute("DELETE FROM movies WHERE id = ?", (movie_id,))
+                else:
+                    self.conn.execute(
+                        "UPDATE movies SET status = 'active', updated_at = ? WHERE id = ?",
+                        (now, movie_id),
+                    )
+                self._reindex_search(movie_id)
+                restored += 1
+        if restored:
+            self.refresh_derived(full=True)
+        return restored
+
+    def reindex_all(self, *, verify: bool = False) -> None:
+        """Rebuild both FTS5 indexes from active movies and optionally run integrity-check."""
+
+        with self.transaction():
+            rebuild_all_indexes(self.conn)
+            self.conn.execute(ACTIVE_MOVIES_REFRESH)
+            if verify:
+                verify_indexes(self.conn)
+        self.conn.execute("PRAGMA optimize")
 
     # --- crawl bookkeeping -------------------------------------------------------------------
 
@@ -328,10 +469,13 @@ class CrawlStore:
 
         rows = self.conn.execute(
             """
-            SELECT entity_id FROM crawl_errors
-            WHERE entity_type = 'movie' AND operation = 'detail'
-              AND attempts < ? AND (next_retry_at IS NULL OR next_retry_at <= ?)
-            ORDER BY last_failed_at DESC
+            SELECT ce.entity_id
+            FROM crawl_errors ce
+            LEFT JOIN movies m ON m.source_site_id = CAST(ce.entity_id AS INTEGER)
+            WHERE ce.entity_type = 'movie' AND ce.operation = 'detail'
+              AND ce.attempts < ? AND (ce.next_retry_at IS NULL OR ce.next_retry_at <= ?)
+              AND COALESCE(m.status, 'active') != 'suppressed'
+            ORDER BY ce.last_failed_at DESC
             """,
             (max_attempts, _iso(now or datetime.now(UTC))),
         ).fetchall()
@@ -355,6 +499,8 @@ class CrawlStore:
         if limit <= 0 or window_days <= 0:
             return []
         moment = now or datetime.now(UTC)
+        # ``published_at`` is stored in naive Asia/Tokyo time ('YYYY-MM-DD HH:MM').
+        jst_cutoff = (moment.astimezone(SOURCE_TZ) - timedelta(days=window_days)).strftime("%Y-%m-%d %H:%M")
         rows = self.conn.execute(
             """
             SELECT source_site_id FROM movies
@@ -366,7 +512,7 @@ class CrawlStore:
             """,
             (
                 _iso(moment - timedelta(hours=refresh_after_hours)),
-                (moment - timedelta(days=window_days)).strftime("%Y-%m-%d"),
+                jst_cutoff,
                 limit,
             ),
         ).fetchall()
@@ -375,16 +521,15 @@ class CrawlStore:
     # --- derived data & run history ----------------------------------------------------------
 
     def refresh_derived(self, *, full: bool = True) -> None:
-        """Recompute time-decayed scores and, when ``full``, the ranking read model.
-
-        A run that changed nothing only refreshes recent hot scores (older ones barely move).
-        """
+        """Recompute time-decayed scores and, when ``full``, the ranking read model & FTS segments."""
 
         with self.transaction():
             if full:
                 self.conn.execute(HOT_SCORE_UPDATE)
                 for statement in ENTITY_STATS_REFRESH:
                     self.conn.execute(statement)
+                self.conn.execute(ACTIVE_MOVIES_REFRESH)
+                optimize_indexes(self.conn)
             else:
                 self.conn.execute(HOT_SCORE_UPDATE_RECENT)
             self.conn.execute(

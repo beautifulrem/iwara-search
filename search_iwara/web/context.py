@@ -231,7 +231,6 @@ class BaseContext(TypedDict):
     header_hidden: dict[str, str]
     clear_query_href: str | None
     scoped_filter_count: int
-    sidebar: dict[str, list[RankingRow]] | None
     workbench: list[FacetSection] | None
     quick_presets: list[QuickPreset]
     dataset: DatasetStatus | None
@@ -327,10 +326,6 @@ def data_version(state: AppState) -> str:
 
 # Cached read models are keyed by the data version, so they can never be older than the ETag
 # computed from the same version (the TTL only bounds memory, not freshness).
-def sidebar(state: AppState, rankings: RankingStore) -> dict[str, list[RankingRow]]:
-    return state.cache.get_or_set(f"sidebar:{data_version(state)}", rankings.sidebar)
-
-
 def facet_workbench(state: AppState, rankings: RankingStore) -> dict[EntityKind, list[RankingRow]]:
     return state.cache.get_or_set(f"workbench:{data_version(state)}", rankings.facet_workbench)
 
@@ -425,7 +420,6 @@ def base_context(
         "header_hidden": header_hidden if path == "/" else {},
         "clear_query_href": search_href(query, q=None) if (path == "/" and header_query) else None,
         "scoped_filter_count": 0,
-        "sidebar": None,
         "workbench": None,
         "quick_presets": [],
         "dataset": dataset_status(state, rankings) if rankings is not None else None,

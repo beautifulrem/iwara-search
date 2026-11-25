@@ -118,14 +118,19 @@ def db(tmp_path_factory: pytest.TempPathFactory) -> Iterator[sqlite3.Connection]
     readonly.close()
 
 
-def timed(action: Callable[[], object], repeat: int = 5) -> float:
+def timed(action: Callable[[], object], repeat: int = 9) -> tuple[float, float]:
+    """Return (p50_ms, p95_ms) after one warmup run instead of cherry-picking min()."""
+
     action()  # warm the page cache like a running server would
-    best = float("inf")
+    samples = []
     for _ in range(repeat):
         started = time.perf_counter()
         action()
-        best = min(best, time.perf_counter() - started)
-    return best * 1000
+        samples.append((time.perf_counter() - started) * 1000)
+    samples.sort()
+    p50 = samples[len(samples) // 2]
+    p95 = samples[min(len(samples) - 1, round(0.95 * (len(samples) - 1)))]
+    return p50, p95
 
 
 def search(db: sqlite3.Connection, page: int = 1, **filters: object) -> Callable[[], object]:
@@ -136,19 +141,19 @@ def search(db: sqlite3.Connection, page: int = 1, **filters: object) -> Callable
 @pytest.mark.parametrize(
     ("label", "filters", "budget_ms"),
     [
-        ("default latest", {}, 60),
-        ("hot", {"sort": "hot_desc"}, 60),
-        ("popularity", {"sort": "popularity_desc"}, 60),
-        ("favorites asc", {"sort": "favorites_asc"}, 60),
-        ("views", {"sort": "views_desc"}, 60),
+        ("default latest", {}, 40),
+        ("hot", {"sort": "hot_desc"}, 40),
+        ("popularity", {"sort": "popularity_desc"}, 40),
+        ("favorites asc", {"sort": "favorites_asc"}, 40),
+        ("views", {"sort": "views_desc"}, 40),
         ("fts latin", {"q": "yelan dance"}, 250),
         ("fts cjk", {"q": "キヴォトス"}, 250),
         ("2-char cjk (n-gram index)", {"q": "水着"}, 150),
         ("1-char cjk (n-gram index)", {"q": "夏"}, 150),
-        ("mixed any", {"q": "初音 dance", "title_mode": "any"}, 250),
+        ("mixed any", {"q": "初音 dance", "title_mode": "any"}, 300),
         ("2-letter latin (prefix index)", {"q": "mm"}, 150),
         ("tag any", {"tag_any": [1, 2]}, 250),
-        ("tag all + not", {"tag_all": [1, 3], "tag_not": [2]}, 400),
+        ("tag all + not", {"tag_all": [1, 3], "tag_not": [2]}, 120),
         ("author", {"author_any": [7]}, 60),
         ("date range + views", {"published_from": "2025-01-01", "min_views": 500}, 250),
     ],
@@ -156,34 +161,39 @@ def search(db: sqlite3.Connection, page: int = 1, **filters: object) -> Callable
 def test_search_budgets(
     db: sqlite3.Connection, label: str, filters: dict[str, object], budget_ms: float
 ) -> None:
-    elapsed = timed(search(db, **filters))
-    assert elapsed < budget_ms, f"{label}: {elapsed:.1f}ms > {budget_ms}ms"
+    p50, p95 = timed(search(db, **filters))
+    assert p50 < budget_ms, f"{label} P50: {p50:.1f}ms > {budget_ms}ms"
+    assert p95 < budget_ms * 1.8, f"{label} P95: {p95:.1f}ms > {budget_ms * 1.8:.1f}ms"
 
 
 def test_deepest_page_is_bounded(db: sqlite3.Connection) -> None:
-    elapsed = timed(search(db, page=10_000 // 36))
-    assert elapsed < 150, f"deep page {elapsed:.1f}ms"
+    p50, _ = timed(search(db, page=10_000 // 36))
+    assert p50 < 100, f"deep page {p50:.1f}ms"
 
 
-def test_sidebar_and_rankings(db: sqlite3.Connection) -> None:
+def test_workbench_and_rankings(db: sqlite3.Connection) -> None:
     rankings = RankingStore(db)
-    assert timed(lambda: rankings.sidebar(limit=12)) < 30
-    assert timed(lambda: rankings.top("categories", limit=60, offset=600)) < 30
-    assert timed(lambda: rankings.count("categories")) < 30
-    assert timed(lambda: rankings.top_movies_by_author([1, 2, 3, 4, 5], per_author=8)) < 60
-    assert timed(rankings.dataset_status) < 80
+    store = SearchStore(db)
+    assert timed(lambda: rankings.facet_workbench(limit=5))[0] < 25
+    assert timed(lambda: store.facet_counts(SearchFilters(q="yelan"), limit=5))[0] < 150
+    assert timed(lambda: rankings.top("categories", limit=60, offset=600))[0] < 30
+    assert timed(lambda: rankings.top("tags", limit=60, q="dan", sort="hot"))[0] < 30
+    assert timed(lambda: rankings.count("categories"))[0] < 30
+    # Full 60-author /authors page budget (was 134-270ms before idx_movies_author_top!)
+    assert timed(lambda: rankings.top_movies_by_author(list(range(1, 61)), per_author=8))[0] < 80
+    assert timed(rankings.dataset_status)[0] < 15
 
 
 def test_related_and_detail(db: sqlite3.Connection) -> None:
     store = SearchStore(db)
-    assert timed(lambda: store.get_movie(123_456)) < 20
-    assert timed(lambda: store.related_movies(123_456)) < 150
+    assert timed(lambda: store.get_movie(123_456))[0] < 20
+    assert timed(lambda: store.related_movies(123_456))[0] < 40
 
 
 def test_autocomplete(db: sqlite3.Connection) -> None:
     store = SearchStore(db)
-    assert timed(lambda: store.autocomplete("tags", "dan")) < 50
-    assert timed(lambda: store.autocomplete("authors", "")) < 20
+    assert timed(lambda: store.autocomplete("tags", "dan"))[0] < 50
+    assert timed(lambda: store.autocomplete("authors", ""))[0] < 20
 
 
 def test_refresh_derived_after_sync(db: sqlite3.Connection, tmp_path: Path) -> None:

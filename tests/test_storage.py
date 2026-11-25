@@ -255,10 +255,16 @@ def test_rankings_and_autocomplete(seeded: CrawlStore):
     categories = rankings.top("categories", limit=2, offset=1)
     assert len(categories) == 2
     assert {row.kind for row in rankings.top("categories", limit=10)} == {"tags", "origins"}
+    assert rankings.count("tags", q="alpha") == 1
+    assert [row.name for row in rankings.top("tags", limit=5, q="ALPHA", sort="movies")] == ["Tag Alpha"]
+    assert [row.name for row in rankings.top("authors", limit=5, sort="views")] == [
+        "Author Eleven",
+        "Author Twelve",
+    ]
     top = rankings.top_movies_by_author([11, 12], per_author=1)
     assert [card.source_site_id for card in top[11]] == [200]
-    sidebar = rankings.sidebar(limit=1)
-    assert set(sidebar) == {"characters", "authors", "categories"}
+    workbench = rankings.facet_workbench(limit=2)
+    assert set(workbench) == {"characters", "tags", "authors", "origins"}
 
     search = SearchStore(seeded.conn)
     assert [item.name for item in search.autocomplete("authors", "eleven")] == ["Author Eleven"]
@@ -367,3 +373,208 @@ def test_short_tokens_are_served_by_the_short_index(store: CrawlStore):
         )
     )
     assert "VIRTUAL TABLE INDEX" in plan
+
+
+def test_fts_consistency_on_missing_and_entity_rename(store: CrawlStore) -> None:
+    seed(
+        store,
+        (
+            make_detail(
+                10,
+                title="First Stage",
+                author=(7, "OldCreator"),
+                tags=[(50, "OldTagName"), (51, "水着")],
+                characters=[(60, "OldChar")],
+                origins=[(70, "OldOrigin")],
+            ),
+            make_detail(
+                11,
+                title="Second Stage",
+                author=(7, "OldCreator"),
+                tags=[(50, "OldTagName")],
+                characters=[(60, "OldChar")],
+                origins=[(70, "OldOrigin")],
+            ),
+        ),
+    )
+    search = SearchStore(store.conn)
+    assert sorted(ids(search, q="OldCreator")) == [10, 11]
+
+    # Marking movie 11 missing removes its FTS rows immediately, and restoring re-adds them.
+    store.mark_movie_missing(11, "https://oreno3d.com/movies/11")
+    fts_rows = [
+        r[0]
+        for r in store.conn.execute(
+            "SELECT rowid FROM movie_search WHERE movie_search MATCH '\"Second Stage\"'"
+        )
+    ]
+    short_rows = [
+        r[0]
+        for r in store.conn.execute(
+            "SELECT rowid FROM movie_search_short WHERE movie_search_short MATCH '\"Second\"*'"
+        )
+    ]
+    assert fts_rows == []
+    assert short_rows == []
+    assert RankingStore(store.conn).dataset_status().movie_count == 1
+
+    # Upstream renames entities on a third movie -> movie 10's FTS keywords update immediately!
+    store.apply_movie_detail(
+        make_detail(
+            12,
+            title="Third Stage",
+            author=(7, "RenamedCreator"),
+            tags=[(50, "RenamedTag")],
+            characters=[(60, "RenamedChar")],
+            origins=[(70, "RenamedOrigin")],
+        )
+    )
+    assert ids(search, q="OldCreator") == []
+    assert sorted(ids(search, q="RenamedCreator")) == [10, 12]
+    assert sorted(ids(search, q="RenamedTag")) == [10, 12]
+    assert sorted(ids(search, q="RenamedChar")) == [10, 12]
+    assert sorted(ids(search, q="RenamedOrigin")) == [10, 12]
+
+
+def test_jst_hot_score_and_stale_cutoff(store: CrawlStore) -> None:
+    from datetime import UTC, datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    jst = ZoneInfo("Asia/Tokyo")
+    now_utc = datetime.now(UTC)
+    now_jst = now_utc.astimezone(jst)
+    one_hour_ago_jst = (now_jst - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
+    eight_hours_ago_jst = (now_jst - timedelta(hours=8)).strftime("%Y-%m-%d %H:%M")
+
+    seed(
+        store,
+        (
+            make_detail(1, title="Fresh 1h", published_at=one_hour_ago_jst, views=1000, favorites=0),
+            make_detail(2, title="Older 8h", published_at=eight_hours_ago_jst, views=1000, favorites=0),
+        ),
+    )
+    scores = dict(store.conn.execute("SELECT source_site_id, hot_score FROM movies").fetchall())
+    # 1h old in JST (~1000 / 7) must strictly outrank 8h old in JST (~1000 / 14)
+    assert scores[1] > scores[2] * 1.5
+
+    # Stale detail cutoff uses JST wall clock to compare against naive JST published_at
+    store.conn.execute("UPDATE movies SET detail_fetched_at = '2020-01-01T00:00:00+00:00'")
+    stale = store.stale_detail_ids(window_days=1, refresh_after_hours=1, limit=10, now=now_utc)
+    assert sorted(stale) == [1, 2]
+
+
+def test_nfkc_entity_autocomplete_and_resolution(store: CrawlStore) -> None:
+    seed(store, (make_detail(1, title="Test", tags=[(1, "4K"), (2, "MMD"), (3, "ダンス")]),))
+    search = SearchStore(store.conn)
+    assert [e.name for e in search.autocomplete("tags", "４Ｋ")] == ["4K"]
+    assert [e.name for e in search.autocomplete("tags", "ｍｍｄ")] == ["MMD"]
+    assert [e.name for e in search.autocomplete("tags", "ﾀﾞﾝｽ")] == ["ダンス"]
+    matched, unmatched = search.resolve_entity_names("tags", "４Ｋ，ＭＭＤ、ﾀﾞﾝｽ,UnknownTag")
+    assert matched == [1, 2, 3]
+    assert unmatched == ["UnknownTag"]
+
+
+def test_missing_movie_keeps_related_movies_and_tags(store: CrawlStore) -> None:
+    seed(
+        store,
+        (
+            make_detail(1, title="Archived Original", author=(9, "StudioX"), tags=[(1, "4K"), (2, "MMD")]),
+            make_detail(2, title="Active Sibling", author=(9, "StudioX"), tags=[(1, "4K"), (3, "60fps")]),
+        ),
+    )
+    store.mark_movie_missing(1, "https://oreno3d.com/movies/1")
+    store.refresh_derived()
+    search = SearchStore(store.conn)
+    detail = search.get_movie(1)
+    assert detail is not None
+    assert detail.status == "missing"
+    related = search.related_movies(1)
+    assert [card.source_site_id for card in related] == [2]
+    assert {tag.name for tag in related[0].tags} == {"4K", "60fps"}
+
+
+def test_suppress_and_unsuppress_survive_crawl_ops(store: CrawlStore) -> None:
+    from search_iwara.models import MovieListItem
+
+    seed(
+        store,
+        (
+            make_detail(100, title="Disputed Work", author=(1, "Creator"), tags=[(1, "MMD")]),
+            make_detail(101, title="Normal Work", author=(1, "Creator"), tags=[(1, "MMD")]),
+        ),
+    )
+    search = SearchStore(store.conn)
+    rankings = RankingStore(store.conn)
+
+    assert store.suppress_movies([100, 999]) == 2  # 100 existing + 999 pre-emptive stub
+    assert search.get_movie(100) is None
+    assert ids(search, q="Disputed") == []
+    assert rankings.dataset_status().movie_count == 1
+
+    # Subsequent crawl list/detail/missing calls must NOT resurrect suppressed items
+    res = store.upsert_movie_list_item(
+        MovieListItem(
+            source_site_id=100,
+            oreno3d_url="https://oreno3d.com/movies/100",
+            title="Disputed Work Updated",
+            author_name="Creator",
+            thumbnail_url=None,
+            view_count=999,
+            favorite_count=99,
+        )
+    )
+    assert res.needs_detail is False
+    assert res.list_changed is False
+    store.apply_movie_detail(make_detail(100, title="Disputed Work Resurrected"))
+    store.mark_movie_missing(100, "https://oreno3d.com/movies/100")
+    assert search.get_movie(100) is None
+    assert ids(search, q="Disputed") == []
+
+    # Unsuppress restores metadata-bearing 100 and drops empty stub 999
+    assert store.unsuppress_movies([100, 999]) == 2
+    assert search.get_movie(100) is not None
+    assert ids(search, q="Disputed") == [100]
+    assert store.conn.execute("SELECT 1 FROM movies WHERE source_site_id = 999").fetchone() is None
+    store.reindex_all(verify=True)
+
+
+def test_dynamic_facet_counts_and_v4_to_v5_upgrade(tmp_path: Path) -> None:
+    from search_iwara.storage.migrations import MIGRATIONS
+
+    path = tmp_path / "v4.sqlite3"
+    conn = connect(path)
+    # Build v1..v4 manually with legacy uncompacted FTS DDL and a 'missing' ghost row in FTS
+    for idx, fn in enumerate(MIGRATIONS[:4], start=1):
+        conn.execute("BEGIN IMMEDIATE")
+        fn(conn)
+        conn.execute(f"PRAGMA user_version = {idx}")
+        conn.execute("COMMIT")
+    conn.execute("DROP TABLE movie_search")
+    conn.execute("CREATE VIRTUAL TABLE movie_search USING fts5(title, keywords, tokenize='trigram')")
+    conn.execute(
+        "INSERT INTO movies (id, source_site_id, oreno3d_url, title, status) "
+        "VALUES (1, 1, 'https://oreno3d.com/movies/1', 'Active Gem', 'active'), "
+        "       (2, 2, 'https://oreno3d.com/movies/2', 'Missing Ghost', 'missing')"
+    )
+    conn.execute(
+        "INSERT INTO movie_search(rowid, title, keywords) VALUES (1, 'Active Gem', ''), (2, 'Missing Ghost', '')"
+    )
+
+    # Migrate v4 -> v5
+    assert migrate(conn) == 1
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert int(conn.execute("SELECT value FROM app_meta WHERE key = 'active_movies'").fetchone()[0]) == 1
+    ghost = conn.execute("SELECT rowid FROM movie_search WHERE movie_search MATCH '\"Missing\"'").fetchall()
+    assert ghost == []
+
+    store = CrawlStore(conn)
+    store.apply_movie_detail(
+        make_detail(3, title="Active Gem Encore", author=(5, "Kuro"), tags=[(10, "4K"), (11, "60fps")])
+    )
+    store.refresh_derived()
+    search = SearchStore(conn)
+    facets, sampled = search.facet_counts(SearchFilters(q="Encore"), limit=5, pinned={"tags": [11]})
+    assert sampled is False
+    assert [row.name for row in facets["tags"]][:2] == ["60fps", "4K"]
+    assert facets["authors"][0].name == "Kuro"
+    conn.close()

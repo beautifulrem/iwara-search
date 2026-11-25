@@ -186,3 +186,24 @@ def test_sync_exit_code_when_terminated(tmp_path: Path, monkeypatch: pytest.Monk
     install_client(monkeypatch, Terminated([]))
     code, _ = invoke("sync", "latest", "--db-path", str(tmp_path / "db.sqlite3"))
     assert code == cli.EXIT_TERMINATED
+
+
+def test_db_suppress_unsuppress_and_reindex(tmp_path: Path) -> None:
+    db_file = tmp_path / "db.sqlite3"
+    code, out = invoke("db", "migrate", "--db-path", str(db_file))
+    assert code == 0, out
+
+    code, _ = invoke("db", "suppress", "0", "--db-path", str(db_file))
+    assert code == cli.EXIT_CONFIG
+    code, _ = invoke("db", "unsuppress", "0", "--db-path", str(db_file))
+    assert code == cli.EXIT_CONFIG
+
+    code, out = invoke("db", "suppress", "101", "102", "--db-path", str(db_file))
+    assert code == 0
+    assert "suppressed 2" in out
+    code, out = invoke("db", "unsuppress", "101", "--db-path", str(db_file))
+    assert code == 0
+    assert "unsuppressed 1" in out
+    code, out = invoke("db", "reindex", "--verify", "--db-path", str(db_file))
+    assert code == 0
+    assert "verified=True" in out

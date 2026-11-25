@@ -338,6 +338,63 @@ def db_refresh(db_path: DbPathOption = None) -> None:
     typer.echo("derived data refreshed")
 
 
+@db_app.command("reindex")
+def db_reindex(
+    db_path: DbPathOption = None,
+    verify: Annotated[bool, typer.Option("--verify/--no-verify", help="Run FTS5 integrity-check.")] = True,
+) -> None:
+    """Rebuild and optimize full-text search indexes from active movies."""
+
+    settings = _settings(db_path=db_path)
+    with sync_lock(settings.db_path):
+        store = CrawlStore.open(settings.db_path)
+        try:
+            store.reindex_all(verify=verify)
+        finally:
+            store.close()
+    typer.echo(f"search indexes rebuilt (verified={verify})")
+
+
+@db_app.command("suppress")
+def db_suppress(
+    source_ids: Annotated[list[int], typer.Argument(help="Oreno3D source movie ID(s) to suppress locally.")],
+    db_path: DbPathOption = None,
+) -> None:
+    """Permanently suppress movie IDs locally (takedown/opt-out); survives future syncs."""
+
+    if any(sid < 1 for sid in source_ids):
+        typer.echo("source IDs must be positive integers", err=True)
+        raise typer.Exit(EXIT_CONFIG)
+    settings = _settings(db_path=db_path)
+    with sync_lock(settings.db_path):
+        store = CrawlStore.open(settings.db_path)
+        try:
+            count = store.suppress_movies(source_ids, base_url=settings.base_url)
+        finally:
+            store.close()
+    typer.echo(f"suppressed {count} movie(s)")
+
+
+@db_app.command("unsuppress")
+def db_unsuppress(
+    source_ids: Annotated[list[int], typer.Argument(help="Suppressed Oreno3D movie ID(s) to restore.")],
+    db_path: DbPathOption = None,
+) -> None:
+    """Lift local suppression on movie IDs."""
+
+    if any(sid < 1 for sid in source_ids):
+        typer.echo("source IDs must be positive integers", err=True)
+        raise typer.Exit(EXIT_CONFIG)
+    settings = _settings(db_path=db_path)
+    with sync_lock(settings.db_path):
+        store = CrawlStore.open(settings.db_path)
+        try:
+            count = store.unsuppress_movies(source_ids)
+        finally:
+            store.close()
+    typer.echo(f"unsuppressed {count} movie(s)")
+
+
 @db_app.command("backup")
 def db_backup(
     db_path: DbPathOption = None,

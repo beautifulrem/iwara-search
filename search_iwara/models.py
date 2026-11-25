@@ -19,6 +19,7 @@ SortMode = Literal[
 TitleMode = Literal["all", "any"]
 EntityKind = Literal["authors", "tags", "origins", "characters"]
 RankingKind = Literal["authors", "tags", "origins", "characters", "categories"]
+RankingSort = Literal["popularity", "hot", "movies", "favorites", "views"]
 MovieStatus = Literal["active", "missing"]
 
 SORT_MODES: tuple[SortMode, ...] = (
@@ -34,6 +35,8 @@ SORT_MODES: tuple[SortMode, ...] = (
 DEFAULT_SORT: SortMode = "published_desc"
 ENTITY_KINDS: tuple[EntityKind, ...] = ("authors", "tags", "origins", "characters")
 RANKING_KINDS: tuple[RankingKind, ...] = ("characters", "authors", "tags", "origins", "categories")
+RANKING_SORTS: tuple[RankingSort, ...] = ("popularity", "hot", "movies", "favorites", "views")
+DEFAULT_RANKING_SORT: RankingSort = "popularity"
 
 
 # --- crawl side ------------------------------------------------------------------------------
