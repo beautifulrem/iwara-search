@@ -2294,6 +2294,14 @@
   }
   @media (min-width: 64rem) {
     .dir-tabs { display: none; }
+    .ranking-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: var(--space-4);
+    }
+    .dir-toolbar { flex-wrap: nowrap; }
+    .dir-search { flex: 0 1 13.5rem; inline-size: 13.5rem; }
   }
   @media (max-width: 63.99rem) {
     .ranking-top {
@@ -2417,6 +2425,7 @@
   .page-head {
     display: grid;
     gap: var(--space-1);
+    min-inline-size: 0;
   }
   .page-head__title { font-size: var(--fs-2xl); font-weight: 650; letter-spacing: -0.015em; }
   .page-head__sub {
