@@ -27,6 +27,7 @@ from ..models import (
     MovieDetailView,
     RankingKind,
     RankingRow,
+    RankingSort,
     SearchFilters,
     SearchPage,
     SortMode,
@@ -151,6 +152,7 @@ class ActiveFilter(TypedDict):
     label: str
     negative: bool
     remove_href: str
+    unmatched: NotRequired[bool]
 
 
 class QuickPreset(TypedDict):
@@ -186,6 +188,13 @@ class RankingTab(TypedDict):
     icon: str
     href: str
     active: bool
+
+
+class RankingSortLink(TypedDict):
+    value: RankingSort
+    href: str
+    active: bool
+    icon: str
 
 
 class SortLink(TypedDict):
@@ -232,6 +241,7 @@ class BaseContext(TypedDict):
     clear_query_href: str | None
     scoped_filter_count: int
     workbench: list[FacetSection] | None
+    workbench_note: str
     quick_presets: list[QuickPreset]
     dataset: DatasetStatus | None
     entity_search_param: dict[EntityKind, str]
@@ -263,6 +273,10 @@ class DetailContext(BaseContext):
 class RankingContext(BaseContext):
     entity_kind: RankingKind
     ranking_tabs: list[RankingTab]
+    ranking_q: str
+    ranking_sort: RankingSort
+    ranking_sorts: list[RankingSortLink]
+    clear_ranking_q_href: str | None
     items: list[RankingRow]
     rank_offset: int
     total: int
@@ -436,6 +450,7 @@ def base_context(
         "clear_query_href": search_href(query, q=None) if (path == "/" and header_query) else None,
         "scoped_filter_count": 0,
         "workbench": None,
+        "workbench_note": "",
         "quick_presets": [],
         "dataset": dataset_status(state, rankings) if rankings is not None else None,
         "entity_search_param": ENTITY_SEARCH_PARAM,

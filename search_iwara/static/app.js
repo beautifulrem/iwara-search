@@ -345,8 +345,11 @@ function initCombobox(container) {
   /** @type {number | null} */
   let announcedCount = null;
 
+  const parentForm = container.closest("form");
+
   const syncHidden = () => {
     hidden.value = [...selected.keys()].join(",");
+    if (parentForm instanceof HTMLFormElement) syncFilterGroupBadges(parentForm);
   };
   syncHidden();
 
@@ -356,11 +359,9 @@ function initCombobox(container) {
       popup.classList.remove("is-dropup");
       popup.classList.add("is-compact");
       const scrollerRect = scroller.getBoundingClientRect();
-      const inputRect = input.getBoundingClientRect();
-      const popupBottom = popup.getBoundingClientRect().bottom;
-      const neededBottom = Math.max(inputRect.bottom + 188, popupBottom + 8);
-      if (neededBottom > scrollerRect.bottom) {
-        scroller.scrollBy({ top: neededBottom - scrollerRect.bottom, behavior: "instant" });
+      const overflow = popup.getBoundingClientRect().bottom + 8 - scrollerRect.bottom;
+      if (overflow > 0) {
+        scroller.scrollBy({ top: overflow, behavior: prefersReducedMotion() ? "instant" : "auto" });
       }
       return;
     }
@@ -436,6 +437,7 @@ function initCombobox(container) {
     if (!item) return;
     addChip(item);
     input.value = "";
+    if (parentForm instanceof HTMLFormElement) syncFilterGroupBadges(parentForm);
     setExpanded(false);
     input.focus();
   };
@@ -500,6 +502,7 @@ function initCombobox(container) {
   const schedule = () => {
     window.clearTimeout(timer);
     const query = input.value.trim();
+    if (parentForm instanceof HTMLFormElement) syncFilterGroupBadges(parentForm);
     timer = window.setTimeout(() => load(query), 150);
   };
 
@@ -545,6 +548,7 @@ function initCombobox(container) {
         } else if (input.value) {
           event.preventDefault();
           input.value = "";
+          if (parentForm instanceof HTMLFormElement) syncFilterGroupBadges(parentForm);
         }
         break;
       case "Tab":
@@ -575,15 +579,15 @@ function initCombobox(container) {
     (next instanceof HTMLElement ? next : input).focus();
   });
 
-  const parentForm = container.closest("form");
-  if (parentForm) {
+  if (parentForm instanceof HTMLFormElement) {
     const resolvers = formResolvers.get(parentForm) ?? [];
     resolvers.push(() => {
       const pending = input.value.trim();
       if (!pending || !options.length) return;
       const picked =
         (active >= 0 ? options[active] : undefined) ??
-        options.find((item) => item.name.toLocaleLowerCase() === pending.toLocaleLowerCase());
+        options.find((item) => item.name.toLocaleLowerCase() === pending.toLocaleLowerCase()) ??
+        (options.length === 1 ? options[0] : undefined);
       if (picked) {
         addChip(picked);
         input.value = "";
@@ -595,6 +599,31 @@ function initCombobox(container) {
 
 /** @type {WeakMap<HTMLFormElement, Array<() => void>>} */
 const formResolvers = new WeakMap();
+
+/** @param {HTMLFormElement} form */
+function syncFilterGroupBadges(form) {
+  for (const group of form.querySelectorAll("details[data-fgroup]")) {
+    if (!(group instanceof HTMLDetailsElement)) continue;
+    const badge = group.querySelector("[data-fgroup-badge]");
+    if (!(badge instanceof HTMLElement)) continue;
+    let count = 0;
+    if (group.dataset.fgroup === "entity") {
+      count = group.querySelectorAll(".chip").length;
+      for (const input of group.querySelectorAll(".combo__input")) {
+        if (input instanceof HTMLInputElement && input.value.trim()) count += 1;
+      }
+    } else if (group.dataset.fgroup === "metrics") {
+      for (const range of group.querySelectorAll("fieldset.range")) {
+        const hasValue = [...range.querySelectorAll("input")].some(
+          (el) => el instanceof HTMLInputElement && el.value.trim() !== "",
+        );
+        if (hasValue) count += 1;
+      }
+    }
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+}
 
 /**
  * @param {HTMLFormElement} form
@@ -619,11 +648,13 @@ function syncSheetPresets(form) {
     if (isActive) chip.setAttribute("aria-current", "true");
     else chip.removeAttribute("aria-current");
   }
+  syncFilterGroupBadges(form);
 }
 
 function initFilterForms() {
   for (const form of document.querySelectorAll("form[data-filter-form]")) {
     if (!(form instanceof HTMLFormElement)) continue;
+    syncFilterGroupBadges(form);
     form.addEventListener("click", (event) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const chip = event.target instanceof Element ? event.target.closest(".preset-chip[data-preset-field]") : null;
@@ -642,6 +673,7 @@ function initFilterForms() {
       announce(chip.textContent?.trim() ?? "");
     });
     form.addEventListener("input", () => syncSheetPresets(form));
+    form.addEventListener("change", () => syncSheetPresets(form));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const siteSearch = document.getElementById("site-search");
@@ -674,7 +706,9 @@ function initFilterForms() {
 }
 
 function initHorizontalStrips() {
-  const strips = [...document.querySelectorAll(".segmented, .dir-tabs, .active-filters")].filter(
+  const strips = [
+    ...document.querySelectorAll(".segmented, .dir-tabs, .active-filters, .active-filters__list"),
+  ].filter(
     /** @returns {el is HTMLElement} */ (el) => el instanceof HTMLElement,
   );
   /** @param {HTMLElement} strip */
@@ -808,6 +842,7 @@ function initSearchContext() {
     const saved = sessionStorage.getItem("lastSearchHref");
     if (saved && saved.startsWith("/") && !saved.startsWith("//")) {
       backLink.href = saved;
+      backLink.hidden = false;
       enhanceTaxonomyOps(saved);
     }
   } catch {

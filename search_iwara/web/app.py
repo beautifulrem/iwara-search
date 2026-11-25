@@ -37,6 +37,7 @@ from .formatting import (
     highlight,
     iso_datetime,
     lang_attribute,
+    linkify_comment,
     relative_time,
 )
 from .metrics import AppMetrics, ObservabilityMiddleware
@@ -86,6 +87,10 @@ def build_templates(version: str) -> Jinja2Templates:
     def reltime(context: Context, value: str | None) -> str:
         return relative_time(value, context["lang"])
 
+    @pass_context
+    def linkify(context: Context, value: str | None) -> Markup:
+        return linkify_comment(value, new_window_hint=context["tr"]("common.opens_new_window"))
+
     def safe_href(value: str | None) -> str:
         """Defence in depth: only https links to the source/video hosts ever reach an href/src."""
 
@@ -94,6 +99,7 @@ def build_templates(version: str) -> Jinja2Templates:
     env.filters.update(
         safe_href=safe_href,
         highlight=highlight,
+        linkify=linkify,
         lang_attr=lang_attr,
         number=format_number,
         compact=compact,

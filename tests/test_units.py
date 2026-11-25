@@ -406,3 +406,30 @@ def test_content_language_marks_only_reliable_cases() -> None:
     assert str(lang_attribute("キヴォトス", "en")) == ' lang="ja"'
     assert str(lang_attribute("キヴォトス", "ja")) == ""  # already the page language
     assert str(lang_attribute("原神", "en")) == ""
+
+
+def test_linkify_comment_safety_and_punctuation() -> None:
+    from search_iwara.web.formatting import linkify_comment
+
+    rendered = str(
+        linkify_comment(
+            "Support: https://patreon.com/creator, wiki (https://en.wikipedia.org/wiki/MMD_(software))! "
+            "Bad: http://insecure.example/x javascript:alert(1) https://u:p@evil.com/x https://localhost/x "
+            "<script>alert(1)</script>",
+            new_window_hint="(opens in a new window)",
+        )
+    )
+    assert (
+        '<a class="comment__link" href="https://patreon.com/creator" target="_blank" '
+        'rel="noopener noreferrer">https://patreon.com/creator'
+        '<span class="sr-only"> (opens in a new window)</span></a>,'
+    ) in rendered
+    assert 'href="https://en.wikipedia.org/wiki/MMD_(software)"' in rendered
+    assert "</a>)!" in rendered
+    assert 'href="http://' not in rendered
+    assert "javascript:alert(1)" in rendered
+    assert 'href="javascript:' not in rendered
+    assert 'href="https://u:p@' not in rendered
+    assert 'href="https://localhost' not in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert str(linkify_comment(None)) == ""

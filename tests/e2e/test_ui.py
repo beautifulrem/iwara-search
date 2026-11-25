@@ -341,11 +341,15 @@ def test_filter_sheet_single_keyword_sync_and_unclipped_combobox(page: Page, app
     assert popup_box["y"] >= combo_box["y"] + combo_box["height"] - 1, (combo_box, popup_box)
     assert popup_box["y"] + popup_box["height"] <= foot_box["y"] + 1, (popup_box, foot_box)
 
+    metrics_badge = page.locator('dialog#filters details[data-fgroup="metrics"] [data-fgroup-badge]')
+    expect(metrics_badge).to_be_hidden()
     preset = page.locator('dialog#filters .preset-chip[data-preset-field="min_views"]')
     preset.click()
     assert page.url.rstrip("/") == app_url  # toggled in-place, did not discard form state
     expect(preset).to_have_attribute("aria-current", "true")
     expect(page.locator("#filter-min_views")).to_have_value("1000")
+    expect(metrics_badge).to_be_visible()
+    expect(metrics_badge).to_have_text("1")
     page.locator('dialog#filters button[type="submit"]').click()
     page.wait_for_url("**min_views=1000**")
     assert "q=yelan" in page.url
@@ -385,18 +389,22 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     hermetic(context, app_url)
     page = context.new_page()
 
-    # Home: coarse targets >= 44x44px, scope badge visible, generous search input text width
-    page.goto(app_url + "/?q=yelan&tag_all=31&min_views=10")
+    # Home: coarse targets >= 44x44px, brand mark visible, clear-all on-screen, generous search input width
+    page.goto(app_url + "/?q=yelan&tag_all=31&tag_not=32&author_any=11&min_views=10")
     wait_ready(page)
     header_box = page.locator(".site-header").bounding_box()
+    brand_box = page.locator(".site-header .brand").bounding_box()
     first_card_box = page.locator("main .card").first.bounding_box()
-    scope_box = page.locator(".search__scope").bounding_box()
+    clear_box = page.locator(".active-filters__clear").bounding_box()
     assert header_box is not None
     assert header_box["height"] <= 58
+    assert brand_box is not None
+    assert brand_box["width"] >= 43.5
     assert first_card_box is not None
     assert first_card_box["y"] <= 250
-    assert scope_box is not None
-    assert scope_box["width"] > 0
+    assert clear_box is not None
+    assert clear_box["x"] + clear_box["width"] <= 390, clear_box
+    expect(page.locator(".search__scope")).to_be_hidden()
     expect(page.locator(".toolbar .segmented")).to_be_hidden()
     expect(page.locator("#sort-select option")).to_have_count(8)
 
@@ -406,7 +414,7 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
             return el.getBoundingClientRect().width - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
         }"""
     )
-    assert visible_text_w >= 145, visible_text_w
+    assert visible_text_w >= 165, visible_text_w
     _assert_all_targets(page, 43.5)
 
     # Even on 360px narrow mobile in English with active badge, unified sort + .filter-trigger fit cleanly
@@ -516,16 +524,18 @@ def test_mobile_detail_and_ranking_layout_and_coarse_targets(browser: Browser, a
     assert op_gap >= 3.5, op_gap
     tablet.close()
 
-    # Fine desktop: all interactive controls >= 24x24px; ranking header + dir-tabs share 1 row
+    # Fine desktop: all interactive controls >= 24x24px; primary ranking hides duplicate dir-tabs
     fine_page = open_page(browser, app_url, "/", viewport=DESKTOP, scheme="dark")
     _assert_all_targets(fine_page, 23.5)
-    fine_page.goto(app_url + "/categories")
+    fine_page.goto(app_url + "/tags")
     wait_ready(fine_page)
+    expect(fine_page.locator(".dir-tabs")).to_be_hidden()
     head_box = fine_page.locator(".page-head").bounding_box()
-    tabs_box = fine_page.locator(".dir-tabs").bounding_box()
+    toolbar_box = fine_page.locator(".dir-toolbar").bounding_box()
     assert head_box is not None
-    assert tabs_box is not None
-    assert abs((head_box["y"] + head_box["height"]) - (tabs_box["y"] + tabs_box["height"])) <= 24
+    assert toolbar_box is not None
+    assert abs((head_box["y"] + head_box["height"]) - (toolbar_box["y"] + toolbar_box["height"])) <= 24
+    _assert_all_targets(fine_page, 23.5)
     fine_page.context.close()
 
     # No-JS mobile exposes top-of-page directory navigation in a compact 2-row header (<= 104px)

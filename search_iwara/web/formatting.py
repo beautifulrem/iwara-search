@@ -6,6 +6,7 @@ import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Final
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from markupsafe import Markup, escape
@@ -125,3 +126,58 @@ def lang_attribute(text: str | None, page_lang: str) -> Markup:
     if detected is None or page_lang.split("-", maxsplit=1)[0] == detected:
         return Markup("")
     return Markup(' lang="{}"').format(detected)
+
+
+HTTPS_URL_RE: Final = re.compile(r"""https://[^\s<>"'`]+""")
+TRAILING_PUNCT: Final = (
+    ".,;:!?)]}\u203a\u00bb\u3002\uff0c\u3001\uff1b\uff1a\uff01\uff1f\uff09\u3011\u300d\u300f\u300b"
+)
+
+
+def _split_url_trailing_punct(raw: str) -> tuple[str, str]:
+    url = raw
+    trailing: list[str] = []
+    while url and url[-1] in TRAILING_PUNCT:
+        if url[-1] == ")" and url.count("(") >= url.count(")"):
+            break
+        trailing.append(url[-1])
+        url = url[:-1]
+    return url, "".join(reversed(trailing))
+
+
+def linkify_comment(text: str | None, *, new_window_hint: str = "(opens in a new window)") -> Markup:
+    """Escape creator notes and safely linkify external ``https://`` URLs."""
+
+    value = text or ""
+    if "https://" not in value:
+        return escape(value)
+    pieces: list[str] = []
+    position = 0
+    escaped_hint = escape(new_window_hint)
+    for match in HTTPS_URL_RE.finditer(value):
+        pieces.append(str(escape(value[position : match.start()])))
+        candidate, suffix = _split_url_trailing_punct(match.group(0))
+        valid = False
+        try:
+            parts = urlsplit(candidate)
+            valid = (
+                parts.scheme == "https"
+                and parts.username is None
+                and parts.password is None
+                and bool(parts.hostname and "." in parts.hostname)
+            )
+        except ValueError:
+            valid = False
+        if valid:
+            escaped_url = escape(candidate)
+            pieces.append(
+                f'<a class="comment__link" href="{escaped_url}" target="_blank" '
+                f'rel="noopener noreferrer">{escaped_url}'
+                f'<span class="sr-only"> {escaped_hint}</span></a>'
+            )
+            pieces.append(str(escape(suffix)))
+        else:
+            pieces.append(str(escape(match.group(0))))
+        position = match.end()
+    pieces.append(str(escape(value[position:])))
+    return Markup("".join(pieces))  # noqa: S704 - every piece above is escaped

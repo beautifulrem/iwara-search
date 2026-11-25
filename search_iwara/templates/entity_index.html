@@ -2,26 +2,63 @@
 
 {% block content %}
 {% set icons = {"characters": "sparkles", "authors": "user", "tags": "tag", "origins": "book", "categories": "layers"} %}
+{% set sort_attr_map = {"popularity": "popularity", "hot": "hot", "movies": "movie_count", "favorites": "total_favorites", "views": "total_views"} %}
+{% set active_attr = sort_attr_map[ranking_sort] %}
 <section class="rankings" aria-labelledby="rank-title">
   <div class="ranking-top">
     <header class="page-head">
       <h1 class="page-head__title" id="rank-title">{{ tr("entity." ~ entity_kind) }}</h1>
       <p class="page-head__sub">
         <span>{{ tr("entity.subtitle", count=total, shown=total|number) }}</span>
-        <span class="page-head__formula">{{ tr("entity.formula") }}</span>
+        <span class="page-head__formula">{{ tr("entity.formula." ~ ranking_sort) }}</span>
       </p>
     </header>
 
-    <nav class="dir-tabs" aria-label="{{ tr('entity.directory_aria') }}">
+    <nav class="dir-tabs{% if entity_kind == 'categories' %} dir-tabs--always{% endif %}" aria-label="{{ tr('entity.directory_aria') }}">
       {% for tab in ranking_tabs %}
       <a class="dir-tabs__item" href="{{ tab.href }}"{% if tab.active %} aria-current="page"{% endif %}>
         {{ ui.icon(tab.icon) }}<span>{{ tr("entity." ~ tab.kind) }}</span>
       </a>
       {% endfor %}
     </nav>
+
+    <div class="dir-toolbar">
+      <form class="dir-search" action="/{{ entity_kind }}" method="get" data-busy-form>
+        <label class="sr-only" for="dir-q">{{ tr("entity.search_label") }}</label>
+        {{ ui.icon("search", "dir-search__icon") }}
+        <input class="input dir-search__input" id="dir-q" type="search" name="q" value="{{ ranking_q }}"
+          placeholder="{{ tr('entity.search_placeholder') }}" autocomplete="off" enterkeyhint="search" maxlength="100">
+        {% if ranking_sort != "popularity" %}
+        <input type="hidden" name="sort" value="{{ ranking_sort }}">
+        {% endif %}
+        {% if request.query_params.get("lang") %}
+        <input type="hidden" name="lang" value="{{ lang }}">
+        {% endif %}
+        {% if clear_ranking_q_href %}
+        <a class="dir-search__clear" href="{{ clear_ranking_q_href }}" aria-label="{{ tr('entity.search_clear') }}" title="{{ tr('entity.search_clear') }}">{{ ui.icon("x") }}</a>
+        {% endif %}
+        <button class="dir-search__submit" type="submit">{{ ui.icon("arrow-right") }}<span class="sr-only">{{ tr("header.search_submit") }}</span></button>
+      </form>
+
+      <nav class="segmented dir-sorts" aria-label="{{ tr('entity.sort_aria') }}">
+        {% for opt in ranking_sorts %}
+        <a class="segmented__item" href="{{ opt.href }}"{% if opt.active %} aria-current="page"{% endif %}>
+          {{ ui.icon(opt.icon) }}<span>{{ tr("entity.sort." ~ opt.value) }}</span>
+        </a>
+        {% endfor %}
+      </nav>
+    </div>
   </div>
 
-  {% if not items %}
+  {% if not items and ranking_q %}
+  <div class="empty-state">
+    <h2 class="empty-state__heading">{{ ui.icon("search") }}<span>{{ tr("entity.empty_search.title") }}</span></h2>
+    <p>{{ tr("entity.empty_search.body", q=ranking_q) }}</p>
+    {% if clear_ranking_q_href %}
+    <div class="empty-state__actions"><a class="btn btn--secondary" href="{{ clear_ranking_q_href }}">{{ tr("entity.empty_search.clear") }}</a></div>
+    {% endif %}
+  </div>
+  {% elif not items %}
   <div class="empty-state">
     <h2 class="empty-state__heading">{{ ui.icon(icons[entity_kind]) }}<span>{{ tr("entity.empty.title") }}</span></h2>
     <p>{{ tr("entity.empty.body") }}</p>
@@ -30,10 +67,11 @@
   {% elif entity_kind == "authors" %}
   <ol class="author-list">
     {% for item in items %}
+    {% set rank = rank_offset + loop.index %}
     {% set movies = author_movies.get(item.source_id, []) %}
     <li class="author-row" aria-labelledby="author-{{ item.source_id }}">
       <div class="author-row__head">
-        <span class="rank-badge{% if rank_offset + loop.index <= 3 %} rank-badge--top{% endif %}">{{ rank_offset + loop.index }}</span>
+        <span class="rank-badge{% if rank <= 3 %} rank-badge--top{% endif %}">{{ rank }}</span>
         <div class="author-row__who">
           <h2 class="author-row__name" id="author-{{ item.source_id }}"><a href="{{ item_href(item) }}" title="{{ item.name }}"{{ item.name|lang_attr }}>{{ item.name }}</a></h2>
           <p class="author-row__stats">
@@ -45,17 +83,23 @@
         <a class="btn btn--secondary btn--sm" href="{{ item_href(item) }}">{{ tr("entity.open") }}<span class="sr-only"> · {{ item.name }}</span>{{ ui.icon("chevron-right") }}</a>
       </div>
       {% if movies %}
-      <div class="rail" role="region" aria-label="{{ tr('entity.works_of', name=item.name) }}" tabindex="0">
-        {% for movie in movies %}
-        {{ ui.card(movie, heading="h3", show_tags=False, show_author=False) }}
-        {% endfor %}
-      </div>
+      <details class="author-works"{% if rank <= 3 or ranking_q %} open{% endif %}>
+        <summary class="author-works__summary">
+          {{ ui.icon("chevron-down", "author-works__chevron") }}
+          <span>{{ tr("entity.works_toggle", count=movies|length, shown=movies|length|number) }}</span>
+        </summary>
+        <div class="rail" role="region" aria-label="{{ tr('entity.works_of', name=item.name) }}" tabindex="0">
+          {% for movie in movies %}
+          {{ ui.card(movie, heading="h3", show_tags=False, show_author=False) }}
+          {% endfor %}
+        </div>
+      </details>
       {% endif %}
     </li>
     {% endfor %}
   </ol>
   {% else %}
-  {% set top = items|map(attribute="popularity")|max %}
+  {% set top = items|map(attribute=active_attr)|max %}
   <div class="rank-table">
     <div class="rank-table__head" aria-hidden="true">
       <span>{{ tr("entity.col.rank") }}</span>
@@ -67,6 +111,7 @@
     <ol class="rank-list">
       {% for item in items %}
       {% set rank = rank_offset + loop.index %}
+      {% set metric_val = item[active_attr] %}
       <li class="rank-row">
         <span class="rank-badge{% if rank <= 3 %} rank-badge--top{% endif %}">{{ rank }}</span>
         <div class="rank-row__main">
@@ -74,7 +119,7 @@
             <a class="rank-row__name" href="{{ item_href(item) }}" title="{{ item.name }}"{{ item.name|lang_attr }}>{{ item.name }}</a>
             {% if entity_kind == "categories" %}<span class="kind-badge">{{ tr("entity.kind." ~ item.kind) }}</span>{% endif %}
           </div>
-          <meter class="rank-row__meter" min="0" max="{{ [top, 1]|max }}" value="{{ item.popularity }}" aria-label="{{ tr('entity.popularity') }}">{{ item.popularity }}</meter>
+          <meter class="rank-row__meter" min="0" max="{{ [top, 1]|max }}" value="{{ [metric_val, 0]|max }}" aria-label="{{ tr('entity.popularity') }}">{{ metric_val }}</meter>
         </div>
         <div class="rank-row__stats">
           <span class="rank-row__num rank-row__works" title="{{ tr('entity.movie_count', count=item.movie_count, shown=item.movie_count|number) }}"><span>{{ item.movie_count|compact }}</span><span class="rank-row__unit">{{ tr("entity.col.works") }}</span></span>

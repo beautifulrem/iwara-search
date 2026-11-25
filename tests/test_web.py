@@ -637,3 +637,53 @@ def test_readyz_missing_db_returns_503_and_head_supported_on_ops_and_api(
         ready = temp_client.get("/readyz")
         assert ready.status_code == 503
         assert ready.json()["status"] == "unavailable"
+
+
+def test_dynamic_workbench_unmatched_chips_directory_search_and_pending_detail(
+    client: TestClient, seeded: CrawlStore
+) -> None:
+    from search_iwara.models import MovieListItem
+
+    # 1. Dynamic workbench preserves q/filter context on row primary link and shows filtered note
+    filtered_html = assert_html(client.get("/?lang=en&q=yelan"))
+    assert "Counts reflect current search results" in filtered_html
+    assert re.search(
+        r'class="wb-row__link" href="/\?q=yelan&amp;(?:character_any|tag_all|author_any|origin_any)=',
+        filtered_html,
+    )
+
+    # 2. Removing one unmatched q_* chip preserves sibling q_* params and marks unmatched badge
+    multi_unmatched = assert_html(
+        client.get("/?lang=en&q_author_any=GhostAuthor&q_tag_all=GhostTagA,GhostTagB")
+    )
+    assert "filter-chip--unmatched" in multi_unmatched
+    assert "Unmatched" in multi_unmatched
+    assert 'href="/?q_author_any=GhostAuthor&amp;q_tag_all=GhostTagB"' in multi_unmatched
+    assert 'href="/?q_tag_all=GhostTagA%2C+GhostTagB"' in multi_unmatched
+
+    # 3. Directory search (?q=), multi-sort (?sort=), and blank/default redirect canonicalization
+    assert client.get("/tags?q=&sort=popularity", follow_redirects=False).headers["location"] == "/tags"
+    tags_sorted = assert_html(client.get("/tags?lang=en&q=beta&sort=movies"))
+    assert "Tag Beta" in tags_sorted
+    assert "Tag Alpha" not in tags_sorted
+    assert "Ranked by indexed video count" in tags_sorted
+
+    empty_dir_search = assert_html(client.get("/characters?lang=en&q=NoSuchCharacter999"))
+    assert "No matching entries" in empty_dir_search
+
+    # 4. Listing-only unfetched movie shows 'Metadata pending' instead of 'Available'
+    with seeded.transaction():
+        seeded.upsert_movie_list_item(
+            MovieListItem(
+                source_site_id=999,
+                oreno3d_url="https://oreno3d.com/movies/999",
+                title="Listing Only Entry",
+                author_name="Pending Creator",
+                thumbnail_url=None,
+                view_count=12,
+                favorite_count=1,
+            )
+        )
+    pending_detail = assert_html(client.get("/movies/999?lang=en"))
+    assert "Metadata pending" in pending_detail
+    assert "tax-chip is-static" in pending_detail

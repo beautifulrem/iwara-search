@@ -13,7 +13,17 @@ from typing import Annotated, Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..models import DEFAULT_SORT, ID_FILTER_FIELDS, SORT_MODES, SearchFilters, SortMode, TitleMode
+from ..models import (
+    DEFAULT_RANKING_SORT,
+    DEFAULT_SORT,
+    ID_FILTER_FIELDS,
+    RANKING_SORTS,
+    SORT_MODES,
+    RankingSort,
+    SearchFilters,
+    SortMode,
+    TitleMode,
+)
 from ..utils import parse_bounded_int, parse_csv_ids
 
 MAX_QUERY_LENGTH: Final = 200
@@ -120,3 +130,17 @@ class AutocompleteParams(BaseModel):
     query: Annotated[str, Field(max_length=100)] = ""
     limit: Annotated[int, Field(ge=1, le=20)] = 10
     counts: bool = False
+
+
+class RankingParams(BaseModel):
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    q: Annotated[str, Field(max_length=100)] = ""
+    sort: RankingSort = DEFAULT_RANKING_SORT
+    page: Annotated[int, Field(ge=1, le=MAX_PAGE)] = 1
+    lang: Annotated[str | None, Field(max_length=16)] = None
+
+    @field_validator("sort", mode="before")
+    @classmethod
+    def _sort(cls, value: Any) -> Any:
+        return value if value in RANKING_SORTS else DEFAULT_RANKING_SORT

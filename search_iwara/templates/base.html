@@ -62,7 +62,8 @@
       </a>
 
       <nav class="site-nav" aria-label="{{ tr('nav.aria') }}">
-        {% for key, label in [("characters", "nav.characters"), ("authors", "nav.authors"), ("tags", "nav.tags"), ("origins", "nav.origins"), ("categories", "entity.categories")] %}
+        <a class="site-nav__link" href="/"{% if nav == "search" %} aria-current="page"{% endif %}>{{ tr("nav.home") }}</a>
+        {% for key, label in [("characters", "nav.characters"), ("authors", "nav.authors"), ("tags", "nav.tags"), ("origins", "nav.origins")] %}
         <a class="site-nav__link" href="/{{ key }}"{% if nav == key %} aria-current="page"{% endif %}>{{ tr(label) }}</a>
         {% endfor %}
       </nav>
@@ -118,7 +119,7 @@
     </main>
     {% if workbench %}
     <aside class="sidebar" aria-label="{{ tr('workbench.aria') }}">
-      {{ ui.workbench_rail(workbench, quick_presets, dataset) }}
+      {{ ui.workbench_rail(workbench, quick_presets, dataset, workbench_note) }}
     </aside>
     {% endif %}
   </div>
@@ -170,7 +171,7 @@
     </div>
     <nav class="drawer__nav" aria-label="{{ tr('nav.aria') }}">
       <a class="drawer__link" href="/"{% if nav == "search" %} aria-current="page"{% endif %}>{{ ui.icon("home") }}{{ tr("nav.home") }}</a>
-      {% for key, label, icon_name in [("characters", "nav.characters", "sparkles"), ("authors", "nav.authors", "user"), ("tags", "nav.tags", "tag"), ("origins", "nav.origins", "book"), ("categories", "entity.categories", "layers")] %}
+      {% for key, label, icon_name in [("characters", "nav.characters", "sparkles"), ("authors", "nav.authors", "user"), ("tags", "nav.tags", "tag"), ("origins", "nav.origins", "book")] %}
       <a class="drawer__link" href="/{{ key }}"{% if nav == key %} aria-current="page"{% endif %}>{{ ui.icon(icon_name) }}{{ tr(label) }}</a>
       {% endfor %}
     </nav>

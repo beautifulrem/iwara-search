@@ -9,9 +9,10 @@
 {% set source_href = movie.oreno3d_url|safe_href %}
 
 {% set is_missing = movie.status == "missing" %}
+{% set is_pending = not is_missing and not movie.detail_fetched_at and not video_href %}
 
 <div class="detail-top">
-  <a class="back-pill" href="{{ back_search_href }}" data-back-search{% if has_search_context %} data-server-context="1"{% endif %}>
+  <a class="back-pill" href="{{ back_search_href }}" data-back-search{% if has_search_context %} data-server-context="1"{% else %} hidden{% endif %}>
     {{ ui.icon("arrow-left") }}<span>{{ tr("detail.back_search") }}</span>
   </a>
   <nav class="breadcrumb" aria-label="{{ tr('detail.breadcrumb.aria') }}">
@@ -48,6 +49,8 @@
       <div class="detail__badges">
         {% if is_missing %}
         <span class="status status--missing">{{ ui.icon("archive") }}{{ tr("detail.status.missing") }}</span>
+        {% elif is_pending %}
+        <span class="status status--pending">{{ tr("detail.status.pending") }}</span>
         {% else %}
         <span class="status status--active">{{ tr("detail.status.active") }}</span>
         {% endif %}
@@ -133,7 +136,7 @@
   {% if movie.author_comment %}
   <section class="detail__comment" aria-labelledby="comment-title">
     <h2 class="detail__section-label" id="comment-title">{{ tr("detail.comment") }}</h2>
-    <p class="comment"{{ movie.author_comment|lang_attr }}>{{ movie.author_comment }}</p>
+    <p class="comment"{{ movie.author_comment|lang_attr }}>{{ movie.author_comment|linkify }}</p>
   </section>
   {% endif %}
 </article>

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from ..i18n import SUPPORTED_LANGS, Translator, build_translator
 from ..models import (
+    DEFAULT_RANKING_SORT,
     ID_FILTER_FIELDS,
     ID_FILTER_KIND,
     RANKING_KINDS,
@@ -22,11 +23,12 @@ from ..models import (
     MovieDetailView,
     RankingKind,
     RankingRow,
+    RankingSort,
     SearchFilters,
     SearchPage,
     SortMode,
 )
-from ..utils import MAX_SAFE_INTEGER, split_query_tokens
+from ..utils import MAX_SAFE_INTEGER, href_with_query, split_query_tokens, update_query_params
 from .context import (
     ENTITY_SEARCH_PARAM,
     PAGE_VARY,
@@ -42,6 +44,7 @@ from .context import (
     QuickPreset,
     RankingContext,
     RankingDep,
+    RankingSortLink,
     RankingTab,
     SearchDep,
     StateDep,
@@ -57,7 +60,7 @@ from .context import (
     search_href,
 )
 from .formatting import SOURCE_TZ
-from .query import MAX_IDS_PER_FILTER, MAX_PAGE, SearchParams
+from .query import MAX_IDS_PER_FILTER, RankingParams, SearchParams
 
 router = APIRouter(include_in_schema=False)  # HTML pages are not part of the JSON API
 QUICK_SORTS: Final[tuple[tuple[SortMode, str], ...]] = (
@@ -72,6 +75,7 @@ FACET_SECTIONS: Final[tuple[tuple[EntityKind, str, str], ...]] = (
     ("authors", "user", "/authors"),
     ("origins", "book", "/origins"),
 )
+PRIMARY_RANKING_KINDS: Final[tuple[RankingKind, ...]] = ("characters", "authors", "tags", "origins")
 RANKING_ICONS: Final[dict[RankingKind, str]] = {
     "characters": "sparkles",
     "authors": "user",
@@ -79,6 +83,13 @@ RANKING_ICONS: Final[dict[RankingKind, str]] = {
     "origins": "book",
     "categories": "layers",
 }
+RANKING_SORT_OPTIONS: Final[tuple[tuple[RankingSort, str], ...]] = (
+    ("popularity", "trophy"),
+    ("hot", "trending"),
+    ("movies", "layers"),
+    ("favorites", "heart"),
+    ("views", "eye"),
+)
 RANKING_PAGE_SIZE: Final = 60
 
 
@@ -141,7 +152,8 @@ def _active_filters(
 ) -> list[ActiveFilter]:
     """Removable chips for every refinement currently applied."""
 
-    base = filters.to_query_dict()
+    unmatched_params = {f"q_{k}": ", ".join(v) for k, v in unmatched.items() if v}
+    base = {**filters.to_query_dict(), **unmatched_params}
     chips: list[ActiveFilter] = []
     if filters.title_mode == "any":
         chips.append(
@@ -169,17 +181,20 @@ def _active_filters(
                     "remove_href": search_href(base, **{name: remaining or None}),
                 }
             )
-        chips.extend(
-            {
-                "group": tr(f"filter.{name}.title"),
-                "operator": operator,
-                "tone": tone,
-                "label": phrase,
-                "negative": name.endswith("_not"),
-                "remove_href": search_href(base),
-            }
-            for phrase in unmatched.get(name, ())
-        )
+        missing_list = unmatched.get(name, [])
+        for idx, phrase in enumerate(missing_list):
+            rem_phrases = [item for i, item in enumerate(missing_list) if i != idx]
+            chips.append(
+                {
+                    "group": tr(f"filter.{name}.title"),
+                    "operator": operator,
+                    "tone": tone,
+                    "label": phrase,
+                    "negative": name.endswith("_not"),
+                    "remove_href": search_href(base, **{f"q_{name}": ", ".join(rem_phrases) or None}),
+                    "unmatched": True,
+                }
+            )
     ranges = (
         ("published", filters.published_from, filters.published_to, ("published_from", "published_to")),
         ("views", filters.min_views, filters.max_views, ("min_views", "max_views")),
@@ -380,6 +395,32 @@ def _blank_param_redirect(
     return resp
 
 
+def _resolve_workbench(
+    state: AppState,
+    search: SearchDep,
+    rankings: RankingDep,
+    *,
+    filters: SearchFilters,
+    query: dict[str, str],
+    tr: Translator,
+    impossible_match: bool,
+) -> tuple[list[FacetSection], str]:
+    if impossible_match:
+        empty_wb: dict[EntityKind, list[RankingRow]] = {k: [] for k, _, _ in FACET_SECTIONS}
+        return _build_workbench(empty_wb, filters, query), tr("workbench.filtered_note")
+    if filters.q or filters.active_filter_count() > 0:
+        pinned: dict[EntityKind, list[int]] = {
+            "characters": [*filters.character_any, *filters.character_not],
+            "tags": [*filters.tag_all, *filters.tag_any, *filters.tag_not],
+            "authors": [*filters.author_any, *filters.author_not],
+            "origins": [*filters.origin_any, *filters.origin_not],
+        }
+        raw_wb, sampled = search.facet_counts(filters, limit=5, pinned=pinned)
+        note = tr("workbench.sampled_note" if sampled else "workbench.filtered_note")
+        return _build_workbench(raw_wb, filters, query), note
+    return _build_workbench(facet_workbench(state, rankings), filters, query), tr("workbench.corpus_note")
+
+
 @router.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse, name="index")
 def index(
     request: Request,
@@ -441,7 +482,11 @@ def index(
     base["quick_presets"] = presets
     base["scoped_filter_count"] = len(active_chips)
     if not empty_db:
-        base["workbench"] = _build_workbench(facet_workbench(state, rankings), filters, query)
+        wb_sections, wb_note = _resolve_workbench(
+            state, search, rankings, filters=filters, query=query, tr=tr, impossible_match=impossible_match
+        )
+        base["workbench"] = wb_sections
+        base["workbench_note"] = wb_note
     if filters.q:
         base["page_title"] = f"{tr('meta.search_title', q=filters.q)} · {tr('brand')}"
     context: IndexContext = {
@@ -603,6 +648,7 @@ def movie_detail(
 
 
 def _ranking_tabs(active_kind: RankingKind) -> list[RankingTab]:
+    kinds = PRIMARY_RANKING_KINDS if active_kind != "categories" else RANKING_KINDS
     return [
         {
             "kind": item,
@@ -610,33 +656,87 @@ def _ranking_tabs(active_kind: RankingKind) -> list[RankingTab]:
             "href": f"/{item}",
             "active": item == active_kind,
         }
-        for item in RANKING_KINDS
+        for item in kinds
+    ]
+
+
+def _ranking_sorts(path: str, query: dict[str, str], active_sort: RankingSort) -> list[RankingSortLink]:
+    return [
+        {
+            "value": mode,
+            "icon": icon,
+            "href": href_with_query(
+                path,
+                update_query_params(query, sort=None if mode == DEFAULT_RANKING_SORT else mode, page=None),
+            ),
+            "active": mode == active_sort,
+        }
+        for mode, icon in RANKING_SORT_OPTIONS
     ]
 
 
 def _ranking_page(kind: RankingKind) -> Callable[..., Response]:
+    path = f"/{kind}"
+
     def handler(
         request: Request,
+        params: Annotated[RankingParams, Query()],
         state: StateDep,
         rankings: RankingDep,
-        page: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 1,
     ) -> Response:
         lang = request_lang(request)
+        needs_clean = any(v == "" for v in request.query_params.values()) or (
+            request.query_params.get("sort") == DEFAULT_RANKING_SORT
+        )
+        if request.method == "GET" and needs_clean:
+            clean_query: dict[str, str] = {}
+            if params.q:
+                clean_query["q"] = params.q
+            if params.sort != DEFAULT_RANKING_SORT:
+                clean_query["sort"] = params.sort
+            if params.page > 1:
+                clean_query["page"] = str(params.page)
+            lang_param = request.query_params.get("lang")
+            if lang_param in SUPPORTED_LANGS:
+                clean_query["lang"] = lang_param
+            resp = RedirectResponse(
+                url=href_with_query(path, update_query_params(clean_query)), status_code=303
+            )
+            apply_lang_cookie(request, resp)
+            return resp
+
         etag = page_etag(request, state, lang)
         if (cached := not_modified(request, etag)) is not None:
             return cached
-        total = rankings.count(kind)
+        total = rankings.count(kind, q=params.q)
         page_total = max(1, -(-total // RANKING_PAGE_SIZE))
-        page = min(page, page_total)
+        page = min(params.page, page_total)
         offset = (page - 1) * RANKING_PAGE_SIZE
-        items = rankings.top(kind, limit=RANKING_PAGE_SIZE, offset=offset)
-        canonical = {"page": str(page)} if page > 1 else {}
+        items = rankings.top(kind, limit=RANKING_PAGE_SIZE, offset=offset, q=params.q, sort=params.sort)
+        ranking_query: dict[str, str] = {}
+        if params.q:
+            ranking_query["q"] = params.q
+        if params.sort != DEFAULT_RANKING_SORT:
+            ranking_query["sort"] = params.sort
+        canonical = dict(ranking_query, **({"page": str(page)} if page > 1 else {}))
         base = base_context(request, state, lang=lang, rankings=rankings, nav=kind, canonical_query=canonical)
-        base["page_title"] = f"{base['tr'](f'entity.{kind}')} · {base['tr']('brand')}"
+        entity_title = base["tr"](f"entity.{kind}")
+        base["page_title"] = (
+            f"{params.q} · {entity_title} · {base['tr']('brand')}"
+            if params.q
+            else f"{entity_title} · {base['tr']('brand')}"
+        )
+        clear_q_href = (
+            href_with_query(path, update_query_params(ranking_query, q=None, page=None)) if params.q else None
+        )
         context: RankingContext = {
             **base,
             "entity_kind": kind,
             "ranking_tabs": _ranking_tabs(kind),
+            "ranking_q": params.q,
+            "ranking_sort": params.sort,
+            "ranking_sorts": _ranking_sorts(path, ranking_query, params.sort),
+            "clear_ranking_q_href": clear_q_href,
             "items": items,
             "rank_offset": offset,
             "total": total,
@@ -644,7 +744,7 @@ def _ranking_page(kind: RankingKind) -> Callable[..., Response]:
                 rankings.top_movies_by_author([item.source_id for item in items]) if kind == "authors" else {}
             ),
             "item_href": lambda item: search_href({}, **{ENTITY_SEARCH_PARAM[item.kind]: item.source_id}),
-            "pagination": pagination(page, page_total, {}, path=f"/{kind}"),
+            "pagination": pagination(page, page_total, ranking_query, path=path),
         }
         return render(request, state, "entity_index.html", context, etag=etag)
 

@@ -70,10 +70,11 @@
     <ul class="active-filters__list">
       {% for chip in active_filters %}
       <li>
-        <a class="filter-chip filter-chip--{{ chip.tone }}{% if chip.negative %} filter-chip--negative{% endif %}" href="{{ chip.remove_href }}">
+        <a class="filter-chip filter-chip--{{ chip.tone }}{% if chip.negative %} filter-chip--negative{% endif %}{% if chip.get('unmatched') %} filter-chip--unmatched{% endif %}" href="{{ chip.remove_href }}">
           {% if chip.operator %}<span class="filter-chip__op">{{ chip.operator }}</span>{% endif %}
           <span class="filter-chip__group">{{ chip.group }}</span>
           <span class="filter-chip__label">{{ chip.label }}</span>
+          {% if chip.get("unmatched") %}<span class="filter-chip__warn">{{ tr("filter.unmatched_badge") }}</span>{% endif %}
           {{ ui.icon("x", "filter-chip__x") }}
           <span class="sr-only"> {{ tr("filter.remove_one") }}</span>
         </a>
@@ -159,15 +160,16 @@
         ("origin", "book", ["origin_any", "origin_not"]),
         ("tag", "tag", ["tag_all", "tag_any", "tag_not"]),
       ] %}
-      {% set selected_count = namespace(n=0, pending=false) %}
+      {% set selected_count = namespace(n=0, pending=0) %}
       {% for name in names %}
         {% set selected_count.n = selected_count.n + groups[name].selected|length %}
-        {% if groups[name].pending_query %}{% set selected_count.pending = true %}{% endif %}
+        {% if groups[name].pending_query %}{% set selected_count.pending = selected_count.pending + 1 %}{% endif %}
       {% endfor %}
-      <details class="fgroup"{% if selected_count.n or selected_count.pending %} open{% endif %}>
+      {% set badge_total = selected_count.n + selected_count.pending %}
+      <details class="fgroup" data-fgroup="entity"{% if badge_total %} open{% endif %}>
         <summary class="fgroup__summary">
           {{ ui.icon(icon_name) }}<span>{{ tr("filter.group." ~ key) }}</span>
-          {% if selected_count.n %}<span class="badge badge--soft">{{ selected_count.n }}</span>{% endif %}
+          <span class="badge badge--soft" data-fgroup-badge{% if not badge_total %} hidden{% endif %}>{{ badge_total }}</span>
           {{ ui.icon("chevron-down", "fgroup__chevron") }}
         </summary>
         <div class="fgroup__body">
@@ -176,9 +178,13 @@
       </details>
       {% endfor %}
 
-      {% set has_metrics = filters.published_from or filters.published_to or filters.min_views is not none or filters.max_views is not none or filters.min_favorites is not none or filters.max_favorites is not none %}
-      <details class="fgroup"{% if has_metrics %} open{% endif %}>
-        <summary class="fgroup__summary">{{ ui.icon("calendar") }}<span>{{ tr("filter.group.metrics") }}</span>{{ ui.icon("chevron-down", "fgroup__chevron") }}</summary>
+      {% set metrics_count = (1 if (filters.published_from or filters.published_to) else 0) + (1 if (filters.min_views is not none or filters.max_views is not none) else 0) + (1 if (filters.min_favorites is not none or filters.max_favorites is not none) else 0) %}
+      <details class="fgroup" data-fgroup="metrics"{% if metrics_count %} open{% endif %}>
+        <summary class="fgroup__summary">
+          {{ ui.icon("calendar") }}<span>{{ tr("filter.group.metrics") }}</span>
+          <span class="badge badge--soft" data-fgroup-badge{% if not metrics_count %} hidden{% endif %}>{{ metrics_count }}</span>
+          {{ ui.icon("chevron-down", "fgroup__chevron") }}
+        </summary>
         <div class="fgroup__body">
           {% for legend_key, fields in [
             ("filter.range.published", [("published_from", "date", filters.published_from, "filter.metrics.from", ""), ("published_to", "date", filters.published_to, "filter.metrics.to", "")]),

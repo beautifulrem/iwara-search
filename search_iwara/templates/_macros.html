@@ -106,7 +106,7 @@
 {%- endmacro %}
 
 {#- Persistent 1-click Boolean Facet Workbench rendered on the desktop search surface. -#}
-{% macro workbench_rail(workbench, presets, dataset) -%}
+{% macro workbench_rail(workbench, presets, dataset, workbench_note="") -%}
 {% if presets %}
 <section class="wb-section wb-section--presets" aria-labelledby="wb-presets-title">
   <div class="wb-section__head">
@@ -122,10 +122,10 @@
 <section class="wb-section" aria-labelledby="wb-{{ section.kind }}">
   <div class="wb-section__head">
     <h2 class="wb-section__title" id="wb-{{ section.kind }}">{{ icon(section.icon) }}<span>{{ tr(label_key) }}</span></h2>
-    <a class="wb-section__more" href="{{ section.more_href }}">{{ tr("sidebar.more") }}<span class="sr-only"> · {{ tr(label_key) }}</span></a>
+    <a class="wb-section__more" href="{{ section.more_href }}">{{ tr("workbench.more") }}<span class="sr-only"> · {{ tr(label_key) }}</span></a>
   </div>
   {% if loop.first %}
-  <p class="wb-note">{{ tr("workbench.corpus_note") }}</p>
+  <p class="wb-note">{{ workbench_note or tr("workbench.corpus_note") }}</p>
   {% endif %}
   {% if section["items"] %}
   <ul class="wb-list">
@@ -133,7 +133,7 @@
     {% set inc_label = tr("workbench.include_tag", name=row.name) if is_req else tr("workbench.include_entity", name=row.name) %}
     {% set exc_label = tr("workbench.exclude_entity", name=row.name) %}
     <li class="wb-row{% if is_req %} wb-row--require{% endif %}{% if row.include_active %} is-included{% elif row.exclude_active %} is-excluded{% endif %}">
-      <a class="wb-row__link" href="{{ row.solo_href }}" title="{{ row.name }}"{{ row.name|lang_attr }}>
+      <a class="wb-row__link" href="{{ row.include_href }}" title="{{ inc_label }}"{{ row.name|lang_attr }}{% if row.include_active %} aria-current="true"{% endif %}>
         <span class="wb-row__name">{{ row.name }}</span>
         <span class="wb-row__count" title="{{ tr('entity.movie_count', count=row.movie_count, shown=row.movie_count|number) }}">{{ row.movie_count|compact }}</span>
       </a>
