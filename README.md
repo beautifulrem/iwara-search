@@ -10,7 +10,7 @@ Self-hosted metadata index and boolean search interface for [Oreno3D](https://or
 [![Release](https://img.shields.io/github/v/release/beautifulrem/iwara-search?label=release&color=c91868)](https://github.com/beautifulrem/iwara-search/releases)
 [![Container](https://img.shields.io/badge/ghcr.io-amd64%20%7C%20arm64-24292f?logo=docker&logoColor=white)](https://github.com/beautifulrem/iwara-search/pkgs/container/iwara-search)
 [![Python](https://img.shields.io/badge/python-3.13%2B-3776ab?logo=python&logoColor=white)](pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-4b5563)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-4b5563)](LICENSE)
 
 [**Live Demo (NSFW)**](https://zundamon.dpdns.org/) ·
 [Quick Start](#quick-start) ·
@@ -228,4 +228,4 @@ All indexed metadata and thumbnails remain the property of their respective crea
 
 ## License
 
-[MIT](LICENSE)
+[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)

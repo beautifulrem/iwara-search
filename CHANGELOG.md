@@ -4,6 +4,9 @@ All notable changes to Search Iwara are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+- Relicensed the project from MIT to the GNU Affero General Public License v3.0 (`AGPL-3.0-only`).
+
 ## [0.3.0] - 2026-11-25
 
 ### Added

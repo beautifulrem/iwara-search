@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM python:3.15-slim@sha256:94d3426f1def7db4a106a232ac121bfd975393e5dfd40a619b955fae45fe7913 AS runtime
 LABEL org.opencontainers.image.title="search-iwara" \
       org.opencontainers.image.description="Local Oreno3D metadata mirror with SQLite search and a FastAPI UI" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 
 RUN groupadd --system --gid 10001 searchiwara \
  && useradd --system --uid 10001 --gid searchiwara --home-dir /data --no-create-home \

@@ -3,7 +3,7 @@ name = "search-iwara"
 version = "0.3.0"
 description = "Local Oreno3D metadata mirror with SQLite search and a FastAPI UI."
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-only"
 requires-python = ">=3.13"
 dependencies = [
   "fastapi>=0.115,<1.0",
