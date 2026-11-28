@@ -217,7 +217,7 @@ jobs:
           args+=(
             --annotation "index:org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}"
             --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}"
-            --annotation "index:org.opencontainers.image.licenses=MIT"
+            --annotation "index:org.opencontainers.image.licenses=AGPL-3.0-only"
           )
           sources=()
           for file in *; do
